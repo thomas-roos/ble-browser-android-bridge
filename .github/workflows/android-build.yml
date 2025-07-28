@@ -1,0 +1,104 @@
+name: Android APK Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        
+    - name: Cache Gradle packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+          
+    - name: Make gradlew executable
+      run: chmod +x android-app/gradlew
+      
+    - name: Build debug APK
+      run: |
+        cd android-app
+        ./gradlew assembleDebug
+        
+    - name: Build release APK
+      run: |
+        cd android-app
+        ./gradlew assembleRelease
+        
+    - name: Upload debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-apk
+        path: android-app/app/build/outputs/apk/debug/*.apk
+        
+    - name: Upload release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-apk
+        path: android-app/app/build/outputs/apk/release/*.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download release APK
+      uses: actions/download-artifact@v4
+      with:
+        name: release-apk
+        path: ./apk
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./apk/*.apk
+        body: |
+          ## 🚀 BLE Browser-Android Bridge Release
+          
+          ### 📱 Installation
+          1. Download the APK file below
+          2. Enable "Install from unknown sources" on your Android device
+          3. Install the APK
+          4. Grant Bluetooth and Location permissions
+          
+          ### 🌐 Web Client
+          Visit the test page: [https://${{ github.repository_owner }}.github.io/ble-browser-android-bridge](https://${{ github.repository_owner }}.github.io/ble-browser-android-bridge)
+          
+          ### 📋 Usage
+          1. Open the Android app and tap "Start BLE Server"
+          2. Open the web page in Chrome with experimental features enabled
+          3. Click "Connect to Android" and select your device
+          4. Start messaging!
+          
+          ### 🔧 Requirements
+          - Android 5.0+ (API 21+)
+          - Chrome browser with Web Bluetooth enabled
+          - Bluetooth LE support on both devices
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
