@@ -21,6 +21,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bluetoothManager: BluetoothManager
     private lateinit var bluetoothAdapter: BluetoothAdapter
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
+    private var bluetoothGattServer: BluetoothGattServer? = null
     private var isAdvertising = false
     private var currentMessage = "Hello from Android!"
 
@@ -29,6 +30,7 @@ class MainActivity : AppCompatActivity() {
         private const val REQUEST_PERMISSIONS = 1001
         
         val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-123456789abc")
+        val CHAR_UUID: UUID = UUID.fromString("87654321-4321-4321-4321-cba987654321")
         
         private fun getRequiredPermissions(): Array<String> {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -81,10 +83,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupUI() {
         binding.startServerButton.setOnClickListener {
             if (isAdvertising) {
-                stopBleAdvertising()
+                stopBleServices()
             } else {
                 if (hasAllRequiredPermissions()) {
-                    startBleAdvertising()
+                    startBleServices()
                 } else {
                     addMessage("❌ Missing permissions - requesting now...")
                     checkAndRequestPermissions()
@@ -95,17 +97,18 @@ class MainActivity : AppCompatActivity() {
         binding.sendMessageButton.setOnClickListener {
             val message = binding.messageInput.text.toString()
             if (message.isNotEmpty()) {
-                updateAdvertisementMessage(message)
+                updateMessage(message)
                 binding.messageInput.text.clear()
             }
         }
 
         updateUI()
-        addMessage("📡 BLE Advertisement Broadcaster")
-        addMessage("This app broadcasts messages via BLE advertisements")
-        addMessage("Web browsers can scan and receive messages without connecting")
+        addMessage("📡 BLE Advertisement + GATT Server")
+        addMessage("This app broadcasts messages AND allows browser connections")
+        addMessage("• Advertisements: Broadcast messages (like COVID apps)")
+        addMessage("• GATT Server: Allow browser to connect and read/write")
         addMessage("")
-        addMessage("⚠️ Note: Messages are limited to ~18 characters due to BLE advertisement size limits")
+        addMessage("⚠️ Advertisement messages limited to ~18 characters")
     }
 
     private fun checkAndRequestPermissions() {
@@ -123,7 +126,7 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSIONS)
         } else {
             addMessage("✅ All permissions granted!")
-            addMessage("Ready to start BLE advertising")
+            addMessage("Ready to start BLE services")
         }
     }
 
@@ -168,43 +171,126 @@ class MainActivity : AppCompatActivity() {
             }
             
             if (deniedPermissions.isEmpty()) {
-                addMessage("🎉 All permissions granted! Ready to start advertising.")
+                addMessage("🎉 All permissions granted! Ready to start services.")
             }
         }
     }
 
-    private fun startBleAdvertising() {
+    private fun startBleServices() {
         if (!hasAllRequiredPermissions()) {
             addMessage("❌ Cannot start - missing permissions")
             checkAndRequestPermissions()
             return
         }
 
-        startAdvertisingWithMessage(currentMessage)
+        startGattServer()
+        startAdvertising()
     }
 
-    private fun startAdvertisingWithMessage(message: String) {
+    private fun startGattServer() {
+        val gattServerCallback = object : BluetoothGattServerCallback() {
+            override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
+                val deviceName = if (ActivityCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                    device?.name ?: device?.address ?: "Unknown"
+                } else {
+                    device?.address ?: "Unknown"
+                }
+                
+                when (newState) {
+                    BluetoothProfile.STATE_CONNECTED -> {
+                        Log.d(TAG, "Browser connected: $deviceName")
+                        runOnUiThread {
+                            addMessage("🌐 Browser connected: $deviceName")
+                        }
+                    }
+                    BluetoothProfile.STATE_DISCONNECTED -> {
+                        Log.d(TAG, "Browser disconnected: $deviceName")
+                        runOnUiThread {
+                            addMessage("🔌 Browser disconnected: $deviceName")
+                        }
+                    }
+                }
+            }
+
+            override fun onCharacteristicReadRequest(
+                device: BluetoothDevice?,
+                requestId: Int,
+                offset: Int,
+                characteristic: BluetoothGattCharacteristic?
+            ) {
+                Log.d(TAG, "Browser reading message: $currentMessage")
+                bluetoothGattServer?.sendResponse(
+                    device, requestId, BluetoothGatt.GATT_SUCCESS,
+                    offset, currentMessage.toByteArray()
+                )
+                runOnUiThread {
+                    addMessage("📖 Browser read: \"$currentMessage\"")
+                }
+            }
+
+            override fun onCharacteristicWriteRequest(
+                device: BluetoothDevice?,
+                requestId: Int,
+                characteristic: BluetoothGattCharacteristic?,
+                preparedWrite: Boolean,
+                responseNeeded: Boolean,
+                offset: Int,
+                value: ByteArray?
+            ) {
+                val newMessage = String(value ?: byteArrayOf())
+                Log.d(TAG, "Browser sent message: $newMessage")
+
+                // Update our current message and restart advertising
+                updateMessage(newMessage)
+
+                if (responseNeeded) {
+                    bluetoothGattServer?.sendResponse(
+                        device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null
+                    )
+                }
+
+                runOnUiThread {
+                    addMessage("📝 Browser updated message: \"$newMessage\"")
+                }
+            }
+        }
+
+        bluetoothGattServer = bluetoothManager.openGattServer(this, gattServerCallback)
+
+        // Create service and characteristic
+        val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val characteristic = BluetoothGattCharacteristic(
+            CHAR_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ or 
+            BluetoothGattCharacteristic.PROPERTY_WRITE or
+            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            BluetoothGattCharacteristic.PERMISSION_READ or 
+            BluetoothGattCharacteristic.PERMISSION_WRITE
+        )
+
+        service.addCharacteristic(characteristic)
+        bluetoothGattServer?.addService(service)
+
+        addMessage("🔧 GATT Server started - browsers can connect")
+    }
+
+    private fun startAdvertising() {
         if (!hasAllRequiredPermissions()) {
             addMessage("❌ Cannot start advertising - missing permissions")
             return
         }
 
-        // Stop current advertising if running
-        if (isAdvertising) {
-            bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
-        }
-
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(false) // No connection needed - just advertisement
+            .setConnectable(true) // Allow connections for GATT
             .build()
 
         // Encode message in manufacturer data (limited to ~18 bytes)
-        val messageBytes = message.take(18).toByteArray() // Limit message length
+        val messageBytes = currentMessage.take(18).toByteArray()
         
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(false) // Save space for message
+            .setIncludeDeviceName(true) // Include device name for easier identification
             .setIncludeTxPowerLevel(false)
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
             .addManufacturerData(0x004C, messageBytes) // Apple company ID for compatibility
@@ -212,12 +298,13 @@ class MainActivity : AppCompatActivity() {
 
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                Log.d(TAG, "Advertising started successfully with message: $message")
+                Log.d(TAG, "Advertising started successfully")
                 isAdvertising = true
                 runOnUiThread {
-                    addMessage("📡 Broadcasting: \"$message\"")
-                    addMessage("🚀 BLE Advertisement active!")
-                    addMessage("Browsers can now scan and receive this message")
+                    addMessage("📡 Broadcasting: \"$currentMessage\"")
+                    addMessage("🚀 BLE Services active!")
+                    addMessage("• Advertising message in BLE advertisements")
+                    addMessage("• GATT server ready for browser connections")
                     updateUI()
                 }
             }
@@ -227,7 +314,7 @@ class MainActivity : AppCompatActivity() {
                 isAdvertising = false
                 runOnUiThread {
                     val errorMsg = when (errorCode) {
-                        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported on this device"
+                        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported"
                         AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many BLE advertisers running"
                         AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "Advertising already started"
                         AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Message too large (max ~18 characters)"
@@ -235,11 +322,6 @@ class MainActivity : AppCompatActivity() {
                         else -> "Unknown error (code: $errorCode)"
                     }
                     addMessage("❌ Advertising failed: $errorMsg")
-                    
-                    if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) {
-                        addMessage("💡 Try a shorter message (18 characters or less)")
-                    }
-                    
                     updateUI()
                 }
             }
@@ -248,32 +330,45 @@ class MainActivity : AppCompatActivity() {
         bluetoothLeAdvertiser?.startAdvertising(settings, data, callback)
     }
 
-    private fun updateAdvertisementMessage(newMessage: String) {
-        if (newMessage.length > 18) {
+    private fun updateMessage(newMessage: String) {
+        val truncatedMessage = if (newMessage.length > 18) {
             addMessage("⚠️ Message too long! Truncating to 18 characters...")
-            currentMessage = newMessage.take(18)
-            addMessage("📝 Truncated to: \"$currentMessage\"")
+            newMessage.take(18)
         } else {
-            currentMessage = newMessage
+            newMessage
         }
         
-        addMessage("📤 Updating broadcast message: \"$currentMessage\"")
+        currentMessage = truncatedMessage
+        addMessage("📤 Updated message: \"$currentMessage\"")
         
         if (isAdvertising) {
             // Restart advertising with new message
-            startAdvertisingWithMessage(currentMessage)
+            addMessage("🔄 Restarting advertising with new message...")
+            bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
+            
+            // Small delay before restarting
+            binding.root.postDelayed({
+                startAdvertising()
+            }, 100)
         }
     }
 
-    private fun stopBleAdvertising() {
+    private fun stopBleServices() {
+        // Stop advertising
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED || 
             Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
             bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
         }
+        
+        // Stop GATT server
+        bluetoothGattServer?.close()
+        bluetoothGattServer = null
+        
         isAdvertising = false
         
-        addMessage("🛑 BLE Advertising stopped")
-        addMessage("Browsers will no longer receive messages")
+        addMessage("🛑 BLE Services stopped")
+        addMessage("• Advertising stopped")
+        addMessage("• GATT server stopped")
         updateUI()
     }
 
@@ -289,22 +384,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
-        binding.startServerButton.text = if (isAdvertising) "Stop BLE Advertising" else "Start BLE Advertising"
+        binding.startServerButton.text = if (isAdvertising) "Stop BLE Services" else "Start BLE Services"
         binding.statusText.text = if (isAdvertising) {
-            "Status: 📡 Broadcasting \"$currentMessage\""
+            "Status: 📡 Broadcasting \"$currentMessage\" + GATT Server"
         } else {
-            "Status: 🔴 Not Broadcasting"
+            "Status: 🔴 Services Stopped"
         }
         binding.sendMessageButton.isEnabled = true // Always enabled
         binding.messageInput.isEnabled = true
         binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
         
         // Show character count hint
-        binding.messageInput.hint = "Message (max 18 chars)"
+        binding.messageInput.hint = "Message (max 18 chars for ads)"
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopBleAdvertising()
+        stopBleServices()
     }
 }

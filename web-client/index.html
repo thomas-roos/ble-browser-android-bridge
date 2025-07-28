@@ -211,6 +211,32 @@
             margin-top: 5px;
         }
 
+        .input-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
         @media (max-width: 600px) {
             .controls {
                 flex-direction: column;
@@ -223,14 +249,22 @@
             .stats {
                 flex-direction: column;
             }
+            
+            .input-group {
+                flex-direction: column;
+            }
+            
+            input[type="text"] {
+                width: 100%;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📡 BLE Advertisement Scanner</h1>
-            <p>Scan for BLE advertisements from Android devices (no connection needed)</p>
+            <h1>📡 BLE Message Scanner</h1>
+            <p>Connect to Android devices and read BLE advertisement messages</p>
         </div>
         
         <div class="content">
@@ -240,28 +274,36 @@
             </div>
 
             <div class="status-section">
-                <div class="status" id="status">Status: Ready to scan</div>
+                <div class="status" id="status">Status: Ready to connect</div>
             </div>
 
             <div class="stats">
                 <div class="stat">
                     <div class="stat-number" id="deviceCount">0</div>
-                    <div class="stat-label">Devices Found</div>
+                    <div class="stat-label">Devices Connected</div>
                 </div>
                 <div class="stat">
                     <div class="stat-number" id="messageCount">0</div>
                     <div class="stat-label">Messages Received</div>
                 </div>
                 <div class="stat">
-                    <div class="stat-number" id="scanTime">0s</div>
-                    <div class="stat-label">Scan Duration</div>
+                    <div class="stat-number" id="connectionTime">0s</div>
+                    <div class="stat-label">Connection Time</div>
                 </div>
             </div>
             
             <div class="controls">
-                <button id="startScan">📡 Start Scanning</button>
-                <button id="stopScan" disabled>⏹️ Stop Scanning</button>
+                <button id="connectBtn">🔍 Connect to Android</button>
+                <button id="disconnectBtn" disabled>🔌 Disconnect</button>
+                <button id="readBtn" disabled>📖 Read Message</button>
                 <button id="clearMessages">🗑️ Clear Messages</button>
+            </div>
+
+            <div class="input-section">
+                <div class="input-group">
+                    <input type="text" id="messageInput" placeholder="Type message to send to Android..." disabled>
+                    <button id="sendBtn" disabled>📤 Send</button>
+                </div>
             </div>
             
             <div class="messages" id="messages"></div>
@@ -272,41 +314,54 @@
                     <li><strong>Android Setup:</strong> Install and run the BLE Bridge Android app</li>
                     <li><strong>Start Broadcasting:</strong> Tap "Start BLE Advertising" in the Android app</li>
                     <li><strong>Browser Setup:</strong> Enable experimental features in Chrome (see warning above)</li>
-                    <li><strong>Scan:</strong> Click "Start Scanning" to detect BLE advertisements</li>
-                    <li><strong>Receive Messages:</strong> Messages from Android will appear automatically!</li>
+                    <li><strong>Connect:</strong> Click "Connect to Android" and select your device</li>
+                    <li><strong>Read Messages:</strong> Click "Read Message" to get the current broadcast message</li>
+                    <li><strong>Send Messages:</strong> Type in the input box and click "Send" (updates Android's broadcast)</li>
                 </ol>
                 
                 <h3>💡 How It Works:</h3>
-                <p>This uses <strong>BLE advertisements</strong> (like COVID contact tracing apps) to broadcast messages. 
-                No connection is needed - the browser just scans for advertisements containing data.</p>
+                <p>This connects to your Android device via <strong>BLE GATT</strong> to read the messages being broadcast in advertisements. 
+                While the Android app broadcasts via advertisements, this web client connects to read and update those messages.</p>
             </div>
         </div>
     </div>
 
     <script>
         const SERVICE_UUID = '12345678-1234-1234-1234-123456789abc';
+        const CHAR_UUID = '87654321-4321-4321-4321-cba987654321';
         
-        let isScanning = false;
-        let scanStartTime = 0;
-        let scanTimer = null;
+        let device = null;
+        let server = null;
+        let service = null;
+        let characteristic = null;
+        let isConnected = false;
+        let connectionStartTime = 0;
+        let connectionTimer = null;
         let deviceCount = 0;
         let messageCount = 0;
-        let foundDevices = new Set();
 
         // DOM elements
         const statusEl = document.getElementById('status');
-        const startScanBtn = document.getElementById('startScan');
-        const stopScanBtn = document.getElementById('stopScan');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const readBtn = document.getElementById('readBtn');
+        const sendBtn = document.getElementById('sendBtn');
         const clearBtn = document.getElementById('clearMessages');
+        const messageInput = document.getElementById('messageInput');
         const messagesEl = document.getElementById('messages');
         const deviceCountEl = document.getElementById('deviceCount');
         const messageCountEl = document.getElementById('messageCount');
-        const scanTimeEl = document.getElementById('scanTime');
+        const connectionTimeEl = document.getElementById('connectionTime');
 
         // Event listeners
-        startScanBtn.addEventListener('click', startScanning);
-        stopScanBtn.addEventListener('click', stopScanning);
+        connectBtn.addEventListener('click', connectToDevice);
+        disconnectBtn.addEventListener('click', disconnectFromDevice);
+        readBtn.addEventListener('click', readMessage);
+        sendBtn.addEventListener('click', sendMessage);
         clearBtn.addEventListener('click', clearMessages);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
 
         // Check Web Bluetooth support
         if (!navigator.bluetooth) {
@@ -314,133 +369,151 @@
             addMessage('Please use Chrome with experimental features enabled', 'system');
         } else {
             addMessage('✅ Web Bluetooth is supported', 'system');
-            addMessage('Ready to scan for BLE advertisements', 'system');
+            addMessage('Ready to connect to Android devices', 'system');
         }
 
-        async function startScanning() {
+        async function connectToDevice() {
             try {
-                addMessage('🔍 Starting BLE advertisement scan...', 'system');
+                addMessage('🔍 Scanning for BLE devices...', 'system');
                 updateStatus('Scanning for devices...');
                 
-                // Request BLE scan
-                const options = {
+                // Request device
+                device = await navigator.bluetooth.requestDevice({
                     filters: [{ services: [SERVICE_UUID] }],
-                    optionalServices: [SERVICE_UUID],
-                    acceptAllAdvertisements: false
-                };
+                    optionalServices: [SERVICE_UUID]
+                });
 
-                // Start scanning for advertisements
-                const scan = await navigator.bluetooth.requestLEScan(options);
+                addMessage(`📱 Found device: ${device.name || 'Unknown Device'}`, 'system');
                 
-                isScanning = true;
-                scanStartTime = Date.now();
-                updateUI();
+                // Connect to GATT server
+                addMessage('🔗 Connecting to device...', 'system');
+                server = await device.connect();
                 
-                addMessage('📡 Scanning for BLE advertisements...', 'system');
-                addMessage('Waiting for Android devices to broadcast messages...', 'system');
+                // Get service
+                service = await server.getPrimaryService(SERVICE_UUID);
                 
-                // Start timer
-                scanTimer = setInterval(updateScanTime, 1000);
+                // Get characteristic
+                characteristic = await service.getCharacteristic(CHAR_UUID);
                 
-                // Listen for advertisements
-                navigator.bluetooth.addEventListener('advertisementreceived', handleAdvertisement);
-                
-            } catch (error) {
-                addMessage(`❌ Scan failed: ${error.message}`, 'error');
-                updateStatus('Scan failed');
-                console.error('Scan error:', error);
-                isScanning = false;
-                updateUI();
-            }
-        }
-
-        function handleAdvertisement(event) {
-            const device = event.device;
-            const deviceId = device.id || device.name || 'Unknown';
-            
-            // Track unique devices
-            if (!foundDevices.has(deviceId)) {
-                foundDevices.add(deviceId);
-                deviceCount++;
+                isConnected = true;
+                deviceCount = 1;
+                connectionStartTime = Date.now();
                 deviceCountEl.textContent = deviceCount;
-            }
-
-            // Extract message from manufacturer data
-            let message = 'No message data';
-            if (event.manufacturerData) {
-                for (let [companyId, data] of event.manufacturerData) {
-                    try {
-                        message = new TextDecoder().decode(data);
-                        break;
-                    } catch (e) {
-                        // Try as hex if text decode fails
-                        message = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                    }
-                }
-            }
-
-            // Extract service data
-            if (event.serviceData && event.serviceData.has(SERVICE_UUID)) {
-                try {
-                    const serviceData = event.serviceData.get(SERVICE_UUID);
-                    message = new TextDecoder().decode(serviceData);
-                } catch (e) {
-                    console.log('Could not decode service data');
-                }
-            }
-
-            messageCount++;
-            messageCountEl.textContent = messageCount;
-
-            const deviceInfo = `Device: ${device.name || 'Unknown'} | RSSI: ${event.rssi || 'N/A'} dBm`;
-            
-            addMessage(`📱 ${message}`, 'advertisement', deviceInfo);
-            
-            console.log('Advertisement received:', {
-                device: device.name,
-                rssi: event.rssi,
-                message: message,
-                manufacturerData: event.manufacturerData,
-                serviceData: event.serviceData
-            });
-        }
-
-        async function stopScanning() {
-            try {
-                // Note: There's no standard way to stop BLE scanning yet
-                // The scan will automatically stop after a timeout
-                isScanning = false;
+                
                 updateUI();
-                updateStatus('Scan stopped');
+                updateStatus(`Connected to ${device.name || 'Android Device'}`);
+                addMessage(`✅ Connected to ${device.name || 'Android Device'}`, 'system');
+                addMessage('You can now read messages and send updates!', 'system');
                 
-                if (scanTimer) {
-                    clearInterval(scanTimer);
-                    scanTimer = null;
-                }
+                // Start connection timer
+                connectionTimer = setInterval(updateConnectionTime, 1000);
                 
-                navigator.bluetooth.removeEventListener('advertisementreceived', handleAdvertisement);
-                
-                addMessage('⏹️ Stopped scanning for advertisements', 'system');
+                // Listen for disconnection
+                device.addEventListener('gattserverdisconnected', onDisconnected);
                 
             } catch (error) {
-                addMessage(`❌ Stop scan error: ${error.message}`, 'error');
+                addMessage(`❌ Connection failed: ${error.message}`, 'error');
+                updateStatus('Connection failed');
+                console.error('Connection error:', error);
+                isConnected = false;
+                updateUI();
+            }
+        }
+
+        async function disconnectFromDevice() {
+            try {
+                if (device && device.gatt.connected) {
+                    device.gatt.disconnect();
+                }
+                onDisconnected();
+            } catch (error) {
+                addMessage(`❌ Disconnect error: ${error.message}`, 'error');
+            }
+        }
+
+        function onDisconnected() {
+            isConnected = false;
+            device = null;
+            server = null;
+            service = null;
+            characteristic = null;
+            deviceCount = 0;
+            deviceCountEl.textContent = deviceCount;
+            
+            if (connectionTimer) {
+                clearInterval(connectionTimer);
+                connectionTimer = null;
+            }
+            
+            updateUI();
+            updateStatus('Disconnected');
+            addMessage('🔌 Disconnected from device', 'system');
+        }
+
+        async function readMessage() {
+            if (!characteristic) {
+                addMessage('❌ Not connected to device', 'error');
+                return;
+            }
+
+            try {
+                addMessage('📖 Reading message from Android...', 'system');
+                const value = await characteristic.readValue();
+                const message = new TextDecoder().decode(value);
+                
+                messageCount++;
+                messageCountEl.textContent = messageCount;
+                
+                addMessage(`📱 Android broadcast: "${message}"`, 'advertisement');
+                
+            } catch (error) {
+                addMessage(`❌ Read failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendMessage() {
+            if (!characteristic) {
+                addMessage('❌ Not connected to device', 'error');
+                return;
+            }
+
+            const message = messageInput.value.trim();
+            if (!message) {
+                addMessage('❌ Please enter a message', 'error');
+                return;
+            }
+
+            if (message.length > 18) {
+                addMessage('⚠️ Message too long! Truncating to 18 characters...', 'system');
+            }
+
+            try {
+                addMessage(`📤 Sending: "${message}"`, 'system');
+                const encoder = new TextEncoder();
+                const data = encoder.encode(message.substring(0, 18));
+                
+                await characteristic.writeValue(data);
+                addMessage(`✅ Message sent to Android`, 'system');
+                addMessage('Android will now broadcast this message in advertisements', 'system');
+                
+                messageInput.value = '';
+                
+            } catch (error) {
+                addMessage(`❌ Send failed: ${error.message}`, 'error');
             }
         }
 
         function clearMessages() {
             messagesEl.innerHTML = '';
-            deviceCount = 0;
             messageCount = 0;
-            foundDevices.clear();
-            deviceCountEl.textContent = '0';
             messageCountEl.textContent = '0';
             addMessage('🗑️ Messages cleared', 'system');
         }
 
-        function updateScanTime() {
-            if (isScanning && scanStartTime) {
-                const elapsed = Math.floor((Date.now() - scanStartTime) / 1000);
-                scanTimeEl.textContent = `${elapsed}s`;
+        function updateConnectionTime() {
+            if (isConnected && connectionStartTime) {
+                const elapsed = Math.floor((Date.now() - connectionStartTime) / 1000);
+                connectionTimeEl.textContent = `${elapsed}s`;
             }
         }
 
@@ -449,7 +522,7 @@
             messageEl.className = `message ${type}`;
             
             const timestamp = new Date().toLocaleTimeString();
-            const prefix = type === 'advertisement' ? '📡 Advertisement' : 
+            const prefix = type === 'advertisement' ? '📡 Message' : 
                           type === 'error' ? '❌ Error' : '🔧 System';
             
             messageEl.innerHTML = `
@@ -466,17 +539,14 @@
         }
 
         function updateUI() {
-            startScanBtn.disabled = isScanning;
-            stopScanBtn.disabled = !isScanning;
+            connectBtn.disabled = isConnected;
+            disconnectBtn.disabled = !isConnected;
+            readBtn.disabled = !isConnected;
+            sendBtn.disabled = !isConnected;
+            messageInput.disabled = !isConnected;
             
-            if (isScanning) {
-                startScanBtn.classList.add('scanning');
-            } else {
-                startScanBtn.classList.remove('scanning');
-                if (scanTimer) {
-                    clearInterval(scanTimer);
-                    scanTimer = null;
-                }
+            if (isConnected) {
+                connectBtn.classList.remove('scanning');
             }
         }
 
