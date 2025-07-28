@@ -2,23 +2,31 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Bluetooth permissions -->
+    <!-- Bluetooth permissions for older Android versions -->
     <uses-permission android:name="android.permission.BLUETOOTH" 
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" 
         android:maxSdkVersion="30" />
     
-    <!-- New Bluetooth permissions for Android 12+ -->
+    <!-- New Bluetooth permissions for Android 12+ (including Android 16) -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     
-    <!-- Location permission required for BLE advertising -->
+    <!-- Location permissions required for BLE advertising on all Android versions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
+    <!-- Nearby devices permission for Android 12+ -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <!-- BLE feature requirement -->
     <uses-feature
         android:name="android.hardware.bluetooth_le"
+        android:required="true" />
+        
+    <!-- Bluetooth feature requirement -->
+    <uses-feature
+        android:name="android.hardware.bluetooth"
         android:required="true" />
 
     <application
@@ -30,7 +38,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BLEBrowserBridge"
-        tools:targetApi="31">
+        tools:targetApi="34">
         
         <activity
             android:name=".MainActivity"

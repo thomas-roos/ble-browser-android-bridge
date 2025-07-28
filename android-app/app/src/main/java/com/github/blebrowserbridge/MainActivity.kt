@@ -5,6 +5,7 @@ import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.ParcelUuid
 import android.util.Log
@@ -30,13 +31,25 @@ class MainActivity : AppCompatActivity() {
         val SERVICE_UUID: UUID = UUID.fromString("12345678-1234-1234-1234-123456789abc")
         val CHAR_UUID: UUID = UUID.fromString("87654321-4321-4321-4321-cba987654321")
         
-        private val REQUIRED_PERMISSIONS = arrayOf(
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.BLUETOOTH_ADVERTISE,
-            Manifest.permission.BLUETOOTH_CONNECT
-        )
+        private fun getRequiredPermissions(): Array<String> {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                // Android 12+ (API 31+) - includes Android 16
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_ADVERTISE,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            } else {
+                // Android 11 and below
+                arrayOf(
+                    Manifest.permission.BLUETOOTH,
+                    Manifest.permission.BLUETOOTH_ADMIN,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,18 +61,20 @@ class MainActivity : AppCompatActivity() {
         bluetoothAdapter = bluetoothManager.adapter
 
         if (!bluetoothAdapter.isEnabled) {
+            addMessage("Please enable Bluetooth in Android settings")
             Toast.makeText(this, "Please enable Bluetooth", Toast.LENGTH_LONG).show()
             return
         }
 
         bluetoothLeAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser
         if (bluetoothLeAdvertiser == null) {
+            addMessage("BLE advertising not supported on this device")
             Toast.makeText(this, "BLE advertising not supported", Toast.LENGTH_LONG).show()
             return
         }
 
         setupUI()
-        checkPermissions()
+        checkAndRequestPermissions()
     }
 
     private fun setupUI() {
@@ -67,7 +82,12 @@ class MainActivity : AppCompatActivity() {
             if (isAdvertising) {
                 stopBleServer()
             } else {
-                startBleServer()
+                if (hasAllRequiredPermissions()) {
+                    startBleServer()
+                } else {
+                    addMessage("Please grant all required permissions")
+                    checkAndRequestPermissions()
+                }
             }
         }
 
@@ -82,13 +102,24 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
-    private fun checkPermissions() {
-        val missingPermissions = REQUIRED_PERMISSIONS.filter {
+    private fun checkAndRequestPermissions() {
+        val requiredPermissions = getRequiredPermissions()
+        val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
 
         if (missingPermissions.isNotEmpty()) {
+            addMessage("Requesting permissions: ${missingPermissions.joinToString(", ")}")
             ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSIONS)
+        } else {
+            addMessage("All permissions granted - ready to start BLE server!")
+        }
+    }
+
+    private fun hasAllRequiredPermissions(): Boolean {
+        val requiredPermissions = getRequiredPermissions()
+        return requiredPermissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -96,32 +127,50 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSIONS) {
             val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-            if (!allGranted) {
-                Toast.makeText(this, "Permissions required for BLE functionality", Toast.LENGTH_LONG).show()
+            if (allGranted) {
+                addMessage("✅ All permissions granted! You can now start the BLE server.")
+            } else {
+                addMessage("❌ Some permissions were denied. Please grant all permissions in Settings.")
+                
+                // Show which permissions were denied
+                permissions.forEachIndexed { index, permission ->
+                    if (grantResults[index] != PackageManager.PERMISSION_GRANTED) {
+                        val permissionName = permission.substringAfterLast(".")
+                        addMessage("Missing: $permissionName")
+                    }
+                }
+                
+                Toast.makeText(this, "Please grant all permissions in Android Settings → Apps → BLE Browser Bridge → Permissions", Toast.LENGTH_LONG).show()
             }
         }
     }
 
     private fun startBleServer() {
-        if (!hasRequiredPermissions()) {
-            checkPermissions()
+        if (!hasAllRequiredPermissions()) {
+            addMessage("❌ Missing permissions. Please grant all permissions first.")
+            checkAndRequestPermissions()
             return
         }
 
         val gattServerCallback = object : BluetoothGattServerCallback() {
             override fun onConnectionStateChange(device: BluetoothDevice?, status: Int, newState: Int) {
-                val deviceName = device?.name ?: device?.address ?: "Unknown"
+                val deviceName = if (ActivityCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                    device?.name ?: device?.address ?: "Unknown"
+                } else {
+                    device?.address ?: "Unknown"
+                }
+                
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
                         Log.d(TAG, "Device connected: $deviceName")
                         runOnUiThread {
-                            addMessage("Browser connected: $deviceName")
+                            addMessage("🔗 Browser connected: $deviceName")
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         Log.d(TAG, "Device disconnected: $deviceName")
                         runOnUiThread {
-                            addMessage("Browser disconnected: $deviceName")
+                            addMessage("🔌 Browser disconnected: $deviceName")
                         }
                     }
                 }
@@ -154,7 +203,7 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Received from browser: $message")
 
                 runOnUiThread {
-                    addMessage("Browser: $message")
+                    addMessage("📱 Browser: $message")
                 }
 
                 if (responseNeeded) {
@@ -185,6 +234,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startAdvertising() {
+        if (!hasAllRequiredPermissions()) {
+            addMessage("❌ Cannot start advertising - missing permissions")
+            return
+        }
+
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
@@ -202,7 +256,7 @@ class MainActivity : AppCompatActivity() {
                 Log.d(TAG, "Advertising started successfully")
                 isAdvertising = true
                 runOnUiThread {
-                    addMessage("BLE Server started - Ready for browser connections!")
+                    addMessage("🚀 BLE Server started - Ready for browser connections!")
                     updateUI()
                 }
             }
@@ -211,7 +265,15 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Advertising failed: $errorCode")
                 isAdvertising = false
                 runOnUiThread {
-                    addMessage("Failed to start BLE server (Error: $errorCode)")
+                    val errorMsg = when (errorCode) {
+                        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported"
+                        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many BLE advertisers"
+                        AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "Advertising already started"
+                        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Advertisement data too large"
+                        AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal error"
+                        else -> "Unknown error ($errorCode)"
+                    }
+                    addMessage("❌ Failed to start BLE server: $errorMsg")
                     updateUI()
                 }
             }
@@ -221,19 +283,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopBleServer() {
-        bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED || 
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
+        }
         bluetoothGattServer?.close()
         bluetoothGattServer = null
         isAdvertising = false
         
-        addMessage("BLE Server stopped")
+        addMessage("🛑 BLE Server stopped")
         updateUI()
     }
 
     private fun sendMessageToBrowser(message: String) {
         // This would require implementing notifications
         // For now, messages are sent when browser reads the characteristic
-        addMessage("Android: $message")
+        addMessage("📤 Android: $message")
     }
 
     private fun addMessage(message: String) {
@@ -249,15 +314,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUI() {
         binding.startServerButton.text = if (isAdvertising) "Stop BLE Server" else "Start BLE Server"
-        binding.statusText.text = if (isAdvertising) "Status: Advertising (Ready for connections)" else "Status: Stopped"
+        binding.statusText.text = if (isAdvertising) {
+            "Status: 🟢 Advertising (Ready for connections)"
+        } else {
+            "Status: 🔴 Stopped"
+        }
         binding.sendMessageButton.isEnabled = isAdvertising
         binding.messageInput.isEnabled = isAdvertising
-    }
-
-    private fun hasRequiredPermissions(): Boolean {
-        return REQUIRED_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
     }
 
     override fun onDestroy() {
