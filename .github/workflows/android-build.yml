@@ -22,11 +22,25 @@ jobs:
         distribution: 'temurin'
         
     - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v2
       
+    - name: Accept Android SDK licenses
+      run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+      
+    - name: Install Android SDK components
+      run: |
+        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        
     - name: Create local.properties
       run: |
         echo "sdk.dir=$ANDROID_HOME" > android-app/local.properties
+        cat android-app/local.properties
+        
+    - name: Verify Android SDK
+      run: |
+        echo "ANDROID_HOME: $ANDROID_HOME"
+        echo "ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT"
+        ls -la $ANDROID_HOME/
         
     - name: Cache Gradle packages
       uses: actions/cache@v3
@@ -41,15 +55,20 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x android-app/gradlew
       
+    - name: Clean project
+      run: |
+        cd android-app
+        ./gradlew clean
+        
     - name: Build debug APK
       run: |
         cd android-app
-        ./gradlew assembleDebug --stacktrace
+        ./gradlew assembleDebug --stacktrace --info
         
     - name: Build release APK
       run: |
         cd android-app
-        ./gradlew assembleRelease --stacktrace
+        ./gradlew assembleRelease --stacktrace --info
         
     - name: Upload debug APK
       uses: actions/upload-artifact@v4
