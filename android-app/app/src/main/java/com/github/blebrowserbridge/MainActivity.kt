@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
                 arrayOf(
                     Manifest.permission.BLUETOOTH_ADVERTISE,
                     Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN,
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
@@ -60,14 +61,15 @@ class MainActivity : AppCompatActivity() {
         bluetoothAdapter = bluetoothManager.adapter
 
         if (!bluetoothAdapter.isEnabled) {
-            addMessage("Please enable Bluetooth in Android settings")
+            addMessage("❌ Bluetooth is disabled")
+            addMessage("Please enable Bluetooth in Android Settings")
             Toast.makeText(this, "Please enable Bluetooth", Toast.LENGTH_LONG).show()
             return
         }
 
         bluetoothLeAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser
         if (bluetoothLeAdvertiser == null) {
-            addMessage("BLE advertising not supported on this device")
+            addMessage("❌ BLE advertising not supported on this device")
             Toast.makeText(this, "BLE advertising not supported", Toast.LENGTH_LONG).show()
             return
         }
@@ -84,7 +86,7 @@ class MainActivity : AppCompatActivity() {
                 if (hasAllRequiredPermissions()) {
                     startBleAdvertising()
                 } else {
-                    addMessage("Please grant all required permissions")
+                    addMessage("❌ Missing permissions - requesting now...")
                     checkAndRequestPermissions()
                 }
             }
@@ -102,6 +104,8 @@ class MainActivity : AppCompatActivity() {
         addMessage("📡 BLE Advertisement Broadcaster")
         addMessage("This app broadcasts messages via BLE advertisements")
         addMessage("Web browsers can scan and receive messages without connecting")
+        addMessage("")
+        addMessage("⚠️ Note: Messages are limited to ~18 characters due to BLE advertisement size limits")
     }
 
     private fun checkAndRequestPermissions() {
@@ -111,10 +115,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (missingPermissions.isNotEmpty()) {
-            addMessage("Requesting permissions: ${missingPermissions.joinToString(", ")}")
+            addMessage("🔐 Requesting ${missingPermissions.size} permissions...")
+            missingPermissions.forEach { permission ->
+                val permissionName = permission.substringAfterLast(".").replace("_", " ")
+                addMessage("  • $permissionName")
+            }
             ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSIONS)
         } else {
-            addMessage("All permissions granted - ready to start BLE advertising!")
+            addMessage("✅ All permissions granted!")
+            addMessage("Ready to start BLE advertising")
         }
     }
 
@@ -128,28 +137,45 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSIONS) {
-            val allGranted = grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-            if (allGranted) {
-                addMessage("✅ All permissions granted! You can now start BLE advertising.")
-            } else {
-                addMessage("❌ Some permissions were denied. Please grant all permissions in Settings.")
-                
-                // Show which permissions were denied
-                permissions.forEachIndexed { index, permission ->
-                    if (grantResults[index] != PackageManager.PERMISSION_GRANTED) {
-                        val permissionName = permission.substringAfterLast(".")
-                        addMessage("Missing: $permissionName")
-                    }
+            val grantedPermissions = mutableListOf<String>()
+            val deniedPermissions = mutableListOf<String>()
+            
+            permissions.forEachIndexed { index, permission ->
+                val permissionName = permission.substringAfterLast(".").replace("_", " ")
+                if (grantResults[index] == PackageManager.PERMISSION_GRANTED) {
+                    grantedPermissions.add(permissionName)
+                } else {
+                    deniedPermissions.add(permissionName)
                 }
+            }
+            
+            if (grantedPermissions.isNotEmpty()) {
+                addMessage("✅ Granted permissions:")
+                grantedPermissions.forEach { addMessage("  • $it") }
+            }
+            
+            if (deniedPermissions.isNotEmpty()) {
+                addMessage("❌ Denied permissions:")
+                deniedPermissions.forEach { addMessage("  • $it") }
+                addMessage("")
+                addMessage("⚠️ To fix this:")
+                addMessage("1. Go to Android Settings")
+                addMessage("2. Apps → BLE Browser Bridge")
+                addMessage("3. Permissions → Enable ALL permissions")
+                addMessage("4. Return to this app and try again")
                 
-                Toast.makeText(this, "Please grant all permissions in Android Settings → Apps → BLE Browser Bridge → Permissions", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Please grant ALL permissions in Settings", Toast.LENGTH_LONG).show()
+            }
+            
+            if (deniedPermissions.isEmpty()) {
+                addMessage("🎉 All permissions granted! Ready to start advertising.")
             }
         }
     }
 
     private fun startBleAdvertising() {
         if (!hasAllRequiredPermissions()) {
-            addMessage("❌ Missing permissions. Please grant all permissions first.")
+            addMessage("❌ Cannot start - missing permissions")
             checkAndRequestPermissions()
             return
         }
@@ -174,7 +200,7 @@ class MainActivity : AppCompatActivity() {
             .setConnectable(false) // No connection needed - just advertisement
             .build()
 
-        // Encode message in manufacturer data (limited to ~20 bytes)
+        // Encode message in manufacturer data (limited to ~18 bytes)
         val messageBytes = message.take(18).toByteArray() // Limit message length
         
         val data = AdvertiseData.Builder()
@@ -190,7 +216,8 @@ class MainActivity : AppCompatActivity() {
                 isAdvertising = true
                 runOnUiThread {
                     addMessage("📡 Broadcasting: \"$message\"")
-                    addMessage("🚀 BLE Advertisement active - browsers can now scan!")
+                    addMessage("🚀 BLE Advertisement active!")
+                    addMessage("Browsers can now scan and receive this message")
                     updateUI()
                 }
             }
@@ -200,14 +227,19 @@ class MainActivity : AppCompatActivity() {
                 isAdvertising = false
                 runOnUiThread {
                     val errorMsg = when (errorCode) {
-                        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported"
-                        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many BLE advertisers"
+                        AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported on this device"
+                        AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many BLE advertisers running"
                         AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "Advertising already started"
-                        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Message too large (max ~18 chars)"
-                        AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal error"
-                        else -> "Unknown error ($errorCode)"
+                        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Message too large (max ~18 characters)"
+                        AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal Bluetooth error"
+                        else -> "Unknown error (code: $errorCode)"
                     }
-                    addMessage("❌ Failed to start advertising: $errorMsg")
+                    addMessage("❌ Advertising failed: $errorMsg")
+                    
+                    if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) {
+                        addMessage("💡 Try a shorter message (18 characters or less)")
+                    }
+                    
                     updateUI()
                 }
             }
@@ -217,12 +249,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateAdvertisementMessage(newMessage: String) {
-        currentMessage = newMessage
-        addMessage("📤 Updating message: \"$newMessage\"")
+        if (newMessage.length > 18) {
+            addMessage("⚠️ Message too long! Truncating to 18 characters...")
+            currentMessage = newMessage.take(18)
+            addMessage("📝 Truncated to: \"$currentMessage\"")
+        } else {
+            currentMessage = newMessage
+        }
+        
+        addMessage("📤 Updating broadcast message: \"$currentMessage\"")
         
         if (isAdvertising) {
             // Restart advertising with new message
-            startAdvertisingWithMessage(newMessage)
+            startAdvertisingWithMessage(currentMessage)
         }
     }
 
@@ -234,6 +273,7 @@ class MainActivity : AppCompatActivity() {
         isAdvertising = false
         
         addMessage("🛑 BLE Advertising stopped")
+        addMessage("Browsers will no longer receive messages")
         updateUI()
     }
 
@@ -258,6 +298,9 @@ class MainActivity : AppCompatActivity() {
         binding.sendMessageButton.isEnabled = true // Always enabled
         binding.messageInput.isEnabled = true
         binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
+        
+        // Show character count hint
+        binding.messageInput.hint = "Message (max 18 chars)"
     }
 
     override fun onDestroy() {
