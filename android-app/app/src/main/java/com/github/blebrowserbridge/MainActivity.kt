@@ -33,11 +33,13 @@ class MainActivity : AppCompatActivity() {
     private var isScanning = false
     private var scanCallback: ScanCallback? = null
     
-    private var currentMessage = "Hello!"
+    private var currentMessage = ""  // Start with empty message
     private var currentMode = Mode.SERVER
     
-    // BLE advertisement has very limited space - be conservative
-    private val MAX_MESSAGE_LENGTH = 15
+    // Configuration - can be modified here to change prefix
+    private val MESSAGE_PREFIX = "BLE:"  // Change this to customize the prefix
+    private val MAX_TOTAL_MESSAGE_LENGTH = 15  // BLE advertisement size limit
+    private val MAX_USER_MESSAGE_LENGTH = MAX_TOTAL_MESSAGE_LENGTH - MESSAGE_PREFIX.length
     
     enum class Mode {
         SERVER, CLIENT
@@ -109,13 +111,13 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val length = s?.length ?: 0
-                val remaining = MAX_MESSAGE_LENGTH - length
+                val remaining = MAX_USER_MESSAGE_LENGTH - length
                 
                 if (remaining >= 0) {
-                    binding.characterCounter.text = "$length/$MAX_MESSAGE_LENGTH"
+                    binding.characterCounter.text = "$length/$MAX_USER_MESSAGE_LENGTH"
                     binding.characterCounter.setTextColor(getColor(android.R.color.darker_gray))
                 } else {
-                    binding.characterCounter.text = "TOO LONG! ($length/$MAX_MESSAGE_LENGTH)"
+                    binding.characterCounter.text = "TOO LONG! ($length/$MAX_USER_MESSAGE_LENGTH)"
                     binding.characterCounter.setTextColor(getColor(android.R.color.holo_red_dark))
                 }
                 
@@ -166,20 +168,21 @@ class MainActivity : AppCompatActivity() {
         // Message input (for server mode)
         binding.sendMessageButton.setOnClickListener {
             val message = binding.messageInput.text.toString().trim()
-            if (message.isNotEmpty() && message.length <= MAX_MESSAGE_LENGTH) {
+            if (message.isNotEmpty() && message.length <= MAX_USER_MESSAGE_LENGTH) {
                 updateMessage(message)
                 binding.messageInput.text.clear()
-            } else if (message.length > MAX_MESSAGE_LENGTH) {
-                Toast.makeText(this, "Message too long! Max $MAX_MESSAGE_LENGTH characters", Toast.LENGTH_SHORT).show()
+            } else if (message.length > MAX_USER_MESSAGE_LENGTH) {
+                Toast.makeText(this, "Message too long! Max $MAX_USER_MESSAGE_LENGTH characters", Toast.LENGTH_SHORT).show()
             }
         }
 
         // Initialize in server mode
         switchToServerMode()
         
-        addMessage("📡 BLE Dual-Mode App")
+        addMessage("📡 BLE Dual-Mode App with Message Filtering")
         addMessage("🔄 Switch between Server (broadcast) and Client (scan) modes")
-        addMessage("⚠️ Messages limited to $MAX_MESSAGE_LENGTH characters for BLE ads")
+        addMessage("🏷️ Messages use '$MESSAGE_PREFIX' prefix for filtering")
+        addMessage("⚠️ User messages limited to $MAX_USER_MESSAGE_LENGTH characters")
         addMessage("")
     }
 
@@ -191,7 +194,7 @@ class MainActivity : AppCompatActivity() {
         binding.clientModeButton.isEnabled = true
         
         addMessage("📡 Switched to SERVER mode")
-        addMessage("• Broadcast messages in BLE advertisements")
+        addMessage("• Broadcast messages with '$MESSAGE_PREFIX' prefix")
         addMessage("• Other devices can scan and receive your messages")
         
         updateUI()
@@ -205,8 +208,8 @@ class MainActivity : AppCompatActivity() {
         binding.clientModeButton.isEnabled = false
         
         addMessage("📱 Switched to CLIENT mode")
-        addMessage("• Scan for BLE advertisements from other devices")
-        addMessage("• Receive messages without connecting")
+        addMessage("• Scan for BLE advertisements with '$MESSAGE_PREFIX' prefix")
+        addMessage("• Filter out non-app messages")
         
         updateUI()
     }
@@ -317,12 +320,14 @@ class MainActivity : AppCompatActivity() {
                 offset: Int,
                 characteristic: BluetoothGattCharacteristic?
             ) {
+                // For GATT, send the message with prefix
+                val fullMessage = MESSAGE_PREFIX + currentMessage
                 bluetoothGattServer?.sendResponse(
                     device, requestId, BluetoothGatt.GATT_SUCCESS,
-                    offset, currentMessage.toByteArray()
+                    offset, fullMessage.toByteArray()
                 )
                 runOnUiThread {
-                    addMessage("📖 Device read: \"$currentMessage\"")
+                    addMessage("📖 Device read: \"$fullMessage\"")
                 }
             }
 
@@ -335,8 +340,15 @@ class MainActivity : AppCompatActivity() {
                 offset: Int,
                 value: ByteArray?
             ) {
-                val newMessage = String(value ?: byteArrayOf())
-                updateMessage(newMessage)
+                val receivedMessage = String(value ?: byteArrayOf())
+                // Remove prefix if present
+                val userMessage = if (receivedMessage.startsWith(MESSAGE_PREFIX)) {
+                    receivedMessage.substring(MESSAGE_PREFIX.length)
+                } else {
+                    receivedMessage
+                }
+                
+                updateMessage(userMessage)
 
                 if (responseNeeded) {
                     bluetoothGattServer?.sendResponse(
@@ -345,7 +357,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 runOnUiThread {
-                    addMessage("📝 Device updated message: \"$newMessage\"")
+                    addMessage("📝 Device updated message: \"$userMessage\"")
                 }
             }
         }
@@ -378,11 +390,11 @@ class MainActivity : AppCompatActivity() {
             .setConnectable(true)
             .build()
 
-        // Use the safe message length
-        val safeMessage = currentMessage.take(MAX_MESSAGE_LENGTH)
-        val messageBytes = safeMessage.toByteArray()
+        // Add prefix to message for advertisement
+        val fullMessage = MESSAGE_PREFIX + currentMessage
+        val messageBytes = fullMessage.toByteArray()
         
-        addMessage("📏 Message length: ${messageBytes.size} bytes (max ~20 for BLE ads)")
+        addMessage("📏 Full message: \"$fullMessage\" (${messageBytes.size} bytes)")
         
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false) // Save space for message
@@ -395,8 +407,8 @@ class MainActivity : AppCompatActivity() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
                 isAdvertising = true
                 runOnUiThread {
-                    addMessage("📡 SERVER: Broadcasting \"$safeMessage\"")
-                    addMessage("🚀 Other devices can now scan and receive this message")
+                    addMessage("📡 SERVER: Broadcasting \"$fullMessage\"")
+                    addMessage("🚀 Laptop scanner can now detect this message")
                     updateUI()
                 }
             }
@@ -415,7 +427,7 @@ class MainActivity : AppCompatActivity() {
                     addMessage("❌ SERVER: Advertising failed: $errorMsg")
                     
                     if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) {
-                        addMessage("💡 Try a message with 10 characters or less")
+                        addMessage("💡 Try a message with 8 characters or less")
                         Toast.makeText(this@MainActivity, "Message too large! Try shorter text", Toast.LENGTH_LONG).show()
                     }
                     
@@ -476,14 +488,24 @@ class MainActivity : AppCompatActivity() {
                 var message = "No message data"
                 scanRecord?.getManufacturerSpecificData(0x004C)?.let { data ->
                     try {
-                        message = String(data, Charsets.UTF_8)
+                        val fullMessage = String(data, Charsets.UTF_8)
+                        // Check for our prefix and remove it
+                        if (fullMessage.startsWith(MESSAGE_PREFIX)) {
+                            message = fullMessage.substring(MESSAGE_PREFIX.length)
+                        } else {
+                            message = "Non-app message: $fullMessage"
+                        }
                     } catch (e: Exception) {
                         message = "Invalid message data"
                     }
                 }
 
                 runOnUiThread {
-                    addMessage("📡 CLIENT: Received \"$message\"")
+                    if (message.startsWith("Non-app message:")) {
+                        addMessage("🔍 CLIENT: $message")
+                    } else {
+                        addMessage("📡 CLIENT: Received \"$message\"")
+                    }
                     addMessage("   └─ From: $deviceName (RSSI: ${rssi}dBm)")
                 }
             }
@@ -508,7 +530,7 @@ class MainActivity : AppCompatActivity() {
         isScanning = true
         
         addMessage("🔍 CLIENT: Scanning for BLE advertisements...")
-        addMessage("📱 Listening for messages from other devices...")
+        addMessage("📱 Looking for messages with '$MESSAGE_PREFIX' prefix...")
         updateUI()
     }
 
@@ -527,14 +549,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMessage(newMessage: String) {
-        val safeMessage = newMessage.take(MAX_MESSAGE_LENGTH)
+        val safeMessage = newMessage.take(MAX_USER_MESSAGE_LENGTH)
         
-        if (newMessage.length > MAX_MESSAGE_LENGTH) {
-            addMessage("⚠️ Message truncated to $MAX_MESSAGE_LENGTH characters")
+        if (newMessage.length > MAX_USER_MESSAGE_LENGTH) {
+            addMessage("⚠️ Message truncated to $MAX_USER_MESSAGE_LENGTH characters")
         }
         
         currentMessage = safeMessage
         addMessage("📤 Updated message: \"$currentMessage\"")
+        addMessage("📡 Will broadcast as: \"$MESSAGE_PREFIX$currentMessage\"")
         
         if (currentMode == Mode.SERVER && isAdvertising) {
             addMessage("🔄 Restarting advertising with new message...")
@@ -561,19 +584,19 @@ class MainActivity : AppCompatActivity() {
             Mode.SERVER -> {
                 binding.startServerButton.text = if (isAdvertising) "Stop Broadcasting" else "Start Broadcasting"
                 binding.statusText.text = if (isAdvertising) {
-                    "Status: 📡 SERVER - Broadcasting \"$currentMessage\""
+                    "Status: 📡 SERVER - Broadcasting \"$MESSAGE_PREFIX$currentMessage\""
                 } else {
                     "Status: 🔴 SERVER - Not Broadcasting"
                 }
-                binding.sendMessageButton.isEnabled = binding.messageInput.text.length <= MAX_MESSAGE_LENGTH && binding.messageInput.text.isNotEmpty()
+                binding.sendMessageButton.isEnabled = binding.messageInput.text.length <= MAX_USER_MESSAGE_LENGTH && binding.messageInput.text.isNotEmpty()
                 binding.messageInput.isEnabled = true
                 binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
-                binding.messageInput.hint = "Message to broadcast (max $MAX_MESSAGE_LENGTH chars)"
+                binding.messageInput.hint = "Message to broadcast (max $MAX_USER_MESSAGE_LENGTH chars)"
             }
             Mode.CLIENT -> {
                 binding.startServerButton.text = if (isScanning) "Stop Scanning" else "Start Scanning"
                 binding.statusText.text = if (isScanning) {
-                    "Status: 📱 CLIENT - Scanning for messages"
+                    "Status: 📱 CLIENT - Scanning for '$MESSAGE_PREFIX' messages"
                 } else {
                     "Status: 🔴 CLIENT - Not Scanning"
                 }
