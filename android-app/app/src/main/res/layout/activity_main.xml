@@ -1,40 +1,105 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="16dp"
+    tools:context=".MainActivity">
 
+    <!-- App Title -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="BLE Browser Bridge"
+        android:text="📡 BLE Dual-Mode Bridge"
         android:textSize="24sp"
         android:textStyle="bold"
         android:gravity="center"
         android:layout_marginBottom="16dp" />
 
+    <!-- Mode Toggle Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <Button
+            android:id="@+id/serverModeButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="📡 SERVER\n(Broadcast)"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="@color/purple_500"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/clientModeButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="📱 CLIENT\n(Scan)"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="@color/teal_700"
+            android:textColor="@android:color/white" />
+
+    </LinearLayout>
+
+    <!-- Status Display -->
     <TextView
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Status: Stopped"
+        android:text="Status: Ready"
         android:textSize="16sp"
-        android:layout_marginBottom="8dp" />
+        android:textStyle="bold"
+        android:padding="12dp"
+        android:background="@color/purple_200"
+        android:layout_marginBottom="16dp" />
 
+    <!-- Main Action Button -->
     <Button
         android:id="@+id/startServerButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start BLE Server"
-        android:textSize="16sp"
-        android:layout_marginBottom="16dp" />
+        android:text="Start Broadcasting"
+        android:textSize="18sp"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="@color/purple_500" />
 
+    <!-- Message Input Section -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="16dp">
+
+        <EditText
+            android:id="@+id/messageInput"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Message to broadcast (max 18 chars)"
+            android:maxLength="18"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/sendMessageButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Update Message"
+            android:backgroundTint="@color/teal_700" />
+
+    </LinearLayout>
+
+    <!-- Messages Display -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Messages:"
-        android:textSize="18sp"
+        android:text="📋 Activity Log:"
+        android:textSize="16sp"
         android:textStyle="bold"
         android:layout_marginBottom="8dp" />
 
@@ -43,48 +108,28 @@
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@android:color/white"
-        android:padding="8dp"
-        android:layout_marginBottom="16dp">
+        android:background="@color/purple_200"
+        android:padding="8dp">
 
         <TextView
             android:id="@+id/messagesText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="12sp"
             android:fontFamily="monospace"
-            android:text="Welcome to BLE Browser Bridge!\nTap 'Start BLE Server' to begin.\n" />
+            android:textColor="@android:color/black" />
+
     </ScrollView>
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal">
-
-        <EditText
-            android:id="@+id/messageInput"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="Type message to send..."
-            android:enabled="false" />
-
-        <Button
-            android:id="@+id/sendMessageButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Send"
-            android:enabled="false"
-            android:layout_marginStart="8dp" />
-    </LinearLayout>
-
+    <!-- Instructions -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Instructions:\n1. Start BLE Server\n2. Open browser test page\n3. Click 'Connect to Android'\n4. Start messaging!"
+        android:text="💡 SERVER: Broadcast messages • CLIENT: Scan for messages from other devices"
         android:textSize="12sp"
-        android:layout_marginTop="16dp"
-        android:background="#f0f0f0"
-        android:padding="8dp" />
+        android:textStyle="italic"
+        android:gravity="center"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/purple_700" />
 
 </LinearLayout>

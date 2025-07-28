@@ -20,10 +20,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var bluetoothManager: BluetoothManager
     private lateinit var bluetoothAdapter: BluetoothAdapter
+    
+    // Server mode (broadcasting)
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
     private var bluetoothGattServer: BluetoothGattServer? = null
     private var isAdvertising = false
+    
+    // Client mode (scanning)
+    private var bluetoothLeScanner: BluetoothLeScanner? = null
+    private var isScanning = false
+    
     private var currentMessage = "Hello from Android!"
+    private var currentMode = Mode.SERVER
+    
+    enum class Mode {
+        SERVER, CLIENT
+    }
 
     companion object {
         private const val TAG = "BLEBridge"
@@ -70,10 +82,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         bluetoothLeAdvertiser = bluetoothAdapter.bluetoothLeAdvertiser
+        bluetoothLeScanner = bluetoothAdapter.bluetoothLeScanner
+        
         if (bluetoothLeAdvertiser == null) {
             addMessage("❌ BLE advertising not supported on this device")
-            Toast.makeText(this, "BLE advertising not supported", Toast.LENGTH_LONG).show()
-            return
+        }
+        
+        if (bluetoothLeScanner == null) {
+            addMessage("❌ BLE scanning not supported on this device")
         }
 
         setupUI()
@@ -81,19 +97,46 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
+        // Mode toggle buttons
+        binding.serverModeButton.setOnClickListener {
+            switchToServerMode()
+        }
+        
+        binding.clientModeButton.setOnClickListener {
+            switchToClientMode()
+        }
+        
+        // Main action button (context-sensitive)
         binding.startServerButton.setOnClickListener {
-            if (isAdvertising) {
-                stopBleServices()
-            } else {
-                if (hasAllRequiredPermissions()) {
-                    startBleServices()
-                } else {
-                    addMessage("❌ Missing permissions - requesting now...")
-                    checkAndRequestPermissions()
+            when (currentMode) {
+                Mode.SERVER -> {
+                    if (isAdvertising) {
+                        stopServerMode()
+                    } else {
+                        if (hasAllRequiredPermissions()) {
+                            startServerMode()
+                        } else {
+                            addMessage("❌ Missing permissions - requesting now...")
+                            checkAndRequestPermissions()
+                        }
+                    }
+                }
+                Mode.CLIENT -> {
+                    if (isScanning) {
+                        stopClientMode()
+                    } else {
+                        if (hasAllRequiredPermissions()) {
+                            startClientMode()
+                        } else {
+                            addMessage("❌ Missing permissions - requesting now...")
+                            checkAndRequestPermissions()
+                        }
+                    }
                 }
             }
         }
 
+        // Message input (for server mode)
         binding.sendMessageButton.setOnClickListener {
             val message = binding.messageInput.text.toString()
             if (message.isNotEmpty()) {
@@ -102,13 +145,40 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        updateUI()
-        addMessage("📡 BLE Advertisement + GATT Server")
-        addMessage("This app broadcasts messages AND allows browser connections")
-        addMessage("• Advertisements: Broadcast messages (like COVID apps)")
-        addMessage("• GATT Server: Allow browser to connect and read/write")
+        // Initialize in server mode
+        switchToServerMode()
+        
+        addMessage("📡 BLE Dual-Mode App")
+        addMessage("🔄 Switch between Server (broadcast) and Client (scan) modes")
         addMessage("")
-        addMessage("⚠️ Advertisement messages limited to ~18 characters")
+    }
+
+    private fun switchToServerMode() {
+        currentMode = Mode.SERVER
+        stopClientMode() // Stop client if running
+        
+        binding.serverModeButton.isEnabled = false
+        binding.clientModeButton.isEnabled = true
+        
+        addMessage("📡 Switched to SERVER mode")
+        addMessage("• Broadcast messages in BLE advertisements")
+        addMessage("• Other devices can scan and receive your messages")
+        
+        updateUI()
+    }
+
+    private fun switchToClientMode() {
+        currentMode = Mode.CLIENT
+        stopServerMode() // Stop server if running
+        
+        binding.serverModeButton.isEnabled = true
+        binding.clientModeButton.isEnabled = false
+        
+        addMessage("📱 Switched to CLIENT mode")
+        addMessage("• Scan for BLE advertisements from other devices")
+        addMessage("• Receive messages without connecting")
+        
+        updateUI()
     }
 
     private fun checkAndRequestPermissions() {
@@ -126,7 +196,7 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), REQUEST_PERMISSIONS)
         } else {
             addMessage("✅ All permissions granted!")
-            addMessage("Ready to start BLE services")
+            addMessage("Ready to start ${currentMode.name.lowercase()} mode")
         }
     }
 
@@ -171,14 +241,15 @@ class MainActivity : AppCompatActivity() {
             }
             
             if (deniedPermissions.isEmpty()) {
-                addMessage("🎉 All permissions granted! Ready to start services.")
+                addMessage("🎉 All permissions granted! Ready to start.")
             }
         }
     }
 
-    private fun startBleServices() {
+    // SERVER MODE FUNCTIONS
+    private fun startServerMode() {
         if (!hasAllRequiredPermissions()) {
-            addMessage("❌ Cannot start - missing permissions")
+            addMessage("❌ Cannot start server - missing permissions")
             checkAndRequestPermissions()
             return
         }
@@ -198,15 +269,13 @@ class MainActivity : AppCompatActivity() {
                 
                 when (newState) {
                     BluetoothProfile.STATE_CONNECTED -> {
-                        Log.d(TAG, "Browser connected: $deviceName")
                         runOnUiThread {
-                            addMessage("🌐 Browser connected: $deviceName")
+                            addMessage("🌐 Device connected: $deviceName")
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
-                        Log.d(TAG, "Browser disconnected: $deviceName")
                         runOnUiThread {
-                            addMessage("🔌 Browser disconnected: $deviceName")
+                            addMessage("🔌 Device disconnected: $deviceName")
                         }
                     }
                 }
@@ -218,13 +287,12 @@ class MainActivity : AppCompatActivity() {
                 offset: Int,
                 characteristic: BluetoothGattCharacteristic?
             ) {
-                Log.d(TAG, "Browser reading message: $currentMessage")
                 bluetoothGattServer?.sendResponse(
                     device, requestId, BluetoothGatt.GATT_SUCCESS,
                     offset, currentMessage.toByteArray()
                 )
                 runOnUiThread {
-                    addMessage("📖 Browser read: \"$currentMessage\"")
+                    addMessage("📖 Device read: \"$currentMessage\"")
                 }
             }
 
@@ -238,9 +306,6 @@ class MainActivity : AppCompatActivity() {
                 value: ByteArray?
             ) {
                 val newMessage = String(value ?: byteArrayOf())
-                Log.d(TAG, "Browser sent message: $newMessage")
-
-                // Update our current message and restart advertising
                 updateMessage(newMessage)
 
                 if (responseNeeded) {
@@ -250,14 +315,13 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 runOnUiThread {
-                    addMessage("📝 Browser updated message: \"$newMessage\"")
+                    addMessage("📝 Device updated message: \"$newMessage\"")
                 }
             }
         }
 
         bluetoothGattServer = bluetoothManager.openGattServer(this, gattServerCallback)
 
-        // Create service and characteristic
         val service = BluetoothGattService(SERVICE_UUID, BluetoothGattService.SERVICE_TYPE_PRIMARY)
         val characteristic = BluetoothGattCharacteristic(
             CHAR_UUID,
@@ -270,8 +334,6 @@ class MainActivity : AppCompatActivity() {
 
         service.addCharacteristic(characteristic)
         bluetoothGattServer?.addService(service)
-
-        addMessage("🔧 GATT Server started - browsers can connect")
     }
 
     private fun startAdvertising() {
@@ -283,34 +345,29 @@ class MainActivity : AppCompatActivity() {
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(true) // Allow connections for GATT
+            .setConnectable(true)
             .build()
 
-        // Encode message in manufacturer data (limited to ~18 bytes)
         val messageBytes = currentMessage.take(18).toByteArray()
         
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true) // Include device name for easier identification
+            .setIncludeDeviceName(true)
             .setIncludeTxPowerLevel(false)
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
-            .addManufacturerData(0x004C, messageBytes) // Apple company ID for compatibility
+            .addManufacturerData(0x004C, messageBytes)
             .build()
 
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                Log.d(TAG, "Advertising started successfully")
                 isAdvertising = true
                 runOnUiThread {
-                    addMessage("📡 Broadcasting: \"$currentMessage\"")
-                    addMessage("🚀 BLE Services active!")
-                    addMessage("• Advertising message in BLE advertisements")
-                    addMessage("• GATT server ready for browser connections")
+                    addMessage("📡 SERVER: Broadcasting \"$currentMessage\"")
+                    addMessage("🚀 Other devices can now scan and receive this message")
                     updateUI()
                 }
             }
 
             override fun onStartFailure(errorCode: Int) {
-                Log.e(TAG, "Advertising failed: $errorCode")
                 isAdvertising = false
                 runOnUiThread {
                     val errorMsg = when (errorCode) {
@@ -321,13 +378,109 @@ class MainActivity : AppCompatActivity() {
                         AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal Bluetooth error"
                         else -> "Unknown error (code: $errorCode)"
                     }
-                    addMessage("❌ Advertising failed: $errorMsg")
+                    addMessage("❌ SERVER: Advertising failed: $errorMsg")
                     updateUI()
                 }
             }
         }
 
         bluetoothLeAdvertiser?.startAdvertising(settings, data, callback)
+    }
+
+    private fun stopServerMode() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED || 
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
+        }
+        
+        bluetoothGattServer?.close()
+        bluetoothGattServer = null
+        isAdvertising = false
+        
+        addMessage("🛑 SERVER: Stopped broadcasting")
+        updateUI()
+    }
+
+    // CLIENT MODE FUNCTIONS
+    private fun startClientMode() {
+        if (!hasAllRequiredPermissions()) {
+            addMessage("❌ Cannot start client - missing permissions")
+            checkAndRequestPermissions()
+            return
+        }
+
+        val scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+            .build()
+
+        val scanFilters = listOf(
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(SERVICE_UUID))
+                .build()
+        )
+
+        val scanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                val device = result.device
+                val rssi = result.rssi
+                val scanRecord = result.scanRecord
+                
+                val deviceName = if (ActivityCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                    device.name ?: "Unknown Device"
+                } else {
+                    "Device ${device.address}"
+                }
+
+                // Extract message from manufacturer data
+                var message = "No message data"
+                scanRecord?.getManufacturerSpecificData(0x004C)?.let { data ->
+                    try {
+                        message = String(data, Charsets.UTF_8)
+                    } catch (e: Exception) {
+                        message = "Invalid message data"
+                    }
+                }
+
+                runOnUiThread {
+                    addMessage("📡 CLIENT: Received \"$message\"")
+                    addMessage("   └─ From: $deviceName (RSSI: ${rssi}dBm)")
+                }
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                runOnUiThread {
+                    val errorMsg = when (errorCode) {
+                        SCAN_FAILED_ALREADY_STARTED -> "Scan already started"
+                        SCAN_FAILED_APPLICATION_REGISTRATION_FAILED -> "App registration failed"
+                        SCAN_FAILED_FEATURE_UNSUPPORTED -> "BLE scanning not supported"
+                        SCAN_FAILED_INTERNAL_ERROR -> "Internal error"
+                        else -> "Unknown error (code: $errorCode)"
+                    }
+                    addMessage("❌ CLIENT: Scan failed: $errorMsg")
+                    isScanning = false
+                    updateUI()
+                }
+            }
+        }
+
+        bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
+        isScanning = true
+        
+        addMessage("🔍 CLIENT: Scanning for BLE advertisements...")
+        addMessage("📱 Listening for messages from other devices...")
+        updateUI()
+    }
+
+    private fun stopClientMode() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED || 
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            bluetoothLeScanner?.stopScan(object : ScanCallback() {})
+        }
+        isScanning = false
+        
+        addMessage("🛑 CLIENT: Stopped scanning")
+        updateUI()
     }
 
     private fun updateMessage(newMessage: String) {
@@ -341,35 +494,14 @@ class MainActivity : AppCompatActivity() {
         currentMessage = truncatedMessage
         addMessage("📤 Updated message: \"$currentMessage\"")
         
-        if (isAdvertising) {
-            // Restart advertising with new message
+        if (currentMode == Mode.SERVER && isAdvertising) {
             addMessage("🔄 Restarting advertising with new message...")
             bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
             
-            // Small delay before restarting
             binding.root.postDelayed({
                 startAdvertising()
             }, 100)
         }
-    }
-
-    private fun stopBleServices() {
-        // Stop advertising
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED || 
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            bluetoothLeAdvertiser?.stopAdvertising(object : AdvertiseCallback() {})
-        }
-        
-        // Stop GATT server
-        bluetoothGattServer?.close()
-        bluetoothGattServer = null
-        
-        isAdvertising = false
-        
-        addMessage("🛑 BLE Services stopped")
-        addMessage("• Advertising stopped")
-        addMessage("• GATT server stopped")
-        updateUI()
     }
 
     private fun addMessage(message: String) {
@@ -377,29 +509,43 @@ class MainActivity : AppCompatActivity() {
         val formattedMessage = "[$timestamp] $message\n"
         binding.messagesText.append(formattedMessage)
         
-        // Auto-scroll to bottom
         binding.scrollView.post {
             binding.scrollView.fullScroll(android.view.View.FOCUS_DOWN)
         }
     }
 
     private fun updateUI() {
-        binding.startServerButton.text = if (isAdvertising) "Stop BLE Services" else "Start BLE Services"
-        binding.statusText.text = if (isAdvertising) {
-            "Status: 📡 Broadcasting \"$currentMessage\" + GATT Server"
-        } else {
-            "Status: 🔴 Services Stopped"
+        when (currentMode) {
+            Mode.SERVER -> {
+                binding.startServerButton.text = if (isAdvertising) "Stop Broadcasting" else "Start Broadcasting"
+                binding.statusText.text = if (isAdvertising) {
+                    "Status: 📡 SERVER - Broadcasting \"$currentMessage\""
+                } else {
+                    "Status: 🔴 SERVER - Not Broadcasting"
+                }
+                binding.sendMessageButton.isEnabled = true
+                binding.messageInput.isEnabled = true
+                binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
+                binding.messageInput.hint = "Message to broadcast (max 18 chars)"
+            }
+            Mode.CLIENT -> {
+                binding.startServerButton.text = if (isScanning) "Stop Scanning" else "Start Scanning"
+                binding.statusText.text = if (isScanning) {
+                    "Status: 📱 CLIENT - Scanning for messages"
+                } else {
+                    "Status: 🔴 CLIENT - Not Scanning"
+                }
+                binding.sendMessageButton.isEnabled = false
+                binding.messageInput.isEnabled = false
+                binding.sendMessageButton.text = "Send Message"
+                binding.messageInput.hint = "Message input (SERVER mode only)"
+            }
         }
-        binding.sendMessageButton.isEnabled = true // Always enabled
-        binding.messageInput.isEnabled = true
-        binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
-        
-        // Show character count hint
-        binding.messageInput.hint = "Message (max 18 chars for ads)"
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        stopBleServices()
+        stopServerMode()
+        stopClientMode()
     }
 }
