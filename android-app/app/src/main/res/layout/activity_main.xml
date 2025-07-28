@@ -73,24 +73,46 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:layout_marginBottom="16dp">
 
-        <EditText
-            android:id="@+id/messageInput"
-            android:layout_width="0dp"
+        <!-- Character Counter -->
+        <TextView
+            android:id="@+id/characterCounter"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:hint="Message to broadcast (max 18 chars)"
-            android:maxLength="18"
-            android:layout_marginEnd="8dp" />
+            android:text="0/15"
+            android:textSize="12sp"
+            android:gravity="end"
+            android:layout_marginBottom="4dp"
+            android:textColor="@android:color/darker_gray" />
 
-        <Button
-            android:id="@+id/sendMessageButton"
-            android:layout_width="wrap_content"
+        <!-- Input Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Update Message"
-            android:backgroundTint="@color/teal_700" />
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/messageInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Message to broadcast (max 15 chars)"
+                android:maxLength="20"
+                android:layout_marginEnd="8dp"
+                android:inputType="text"
+                android:singleLine="true" />
+
+            <Button
+                android:id="@+id/sendMessageButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Update Message"
+                android:backgroundTint="@color/teal_700"
+                android:enabled="false" />
+
+        </LinearLayout>
 
     </LinearLayout>
 
@@ -125,7 +147,7 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="💡 SERVER: Broadcast messages • CLIENT: Scan for messages from other devices"
+        android:text="💡 SERVER: Broadcast messages (max 15 chars) • CLIENT: Scan for messages from other devices"
         android:textSize="12sp"
         android:textStyle="italic"
         android:gravity="center"

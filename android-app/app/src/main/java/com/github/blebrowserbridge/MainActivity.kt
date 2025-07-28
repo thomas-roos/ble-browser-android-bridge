@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelUuid
+import android.text.Editable
+import android.text.TextWatcher
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -29,9 +31,13 @@ class MainActivity : AppCompatActivity() {
     // Client mode (scanning)
     private var bluetoothLeScanner: BluetoothLeScanner? = null
     private var isScanning = false
+    private var scanCallback: ScanCallback? = null
     
-    private var currentMessage = "Hello from Android!"
+    private var currentMessage = "Hello!"
     private var currentMode = Mode.SERVER
+    
+    // BLE advertisement has very limited space - be conservative
+    private val MAX_MESSAGE_LENGTH = 15
     
     enum class Mode {
         SERVER, CLIENT
@@ -97,6 +103,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
+        // Set up message input with character counter
+        binding.messageInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val length = s?.length ?: 0
+                val remaining = MAX_MESSAGE_LENGTH - length
+                
+                if (remaining >= 0) {
+                    binding.characterCounter.text = "$length/$MAX_MESSAGE_LENGTH"
+                    binding.characterCounter.setTextColor(getColor(android.R.color.darker_gray))
+                } else {
+                    binding.characterCounter.text = "TOO LONG! ($length/$MAX_MESSAGE_LENGTH)"
+                    binding.characterCounter.setTextColor(getColor(android.R.color.holo_red_dark))
+                }
+                
+                // Enable/disable send button based on length
+                binding.sendMessageButton.isEnabled = remaining >= 0 && length > 0
+            }
+        })
+        
         // Mode toggle buttons
         binding.serverModeButton.setOnClickListener {
             switchToServerMode()
@@ -138,10 +165,12 @@ class MainActivity : AppCompatActivity() {
 
         // Message input (for server mode)
         binding.sendMessageButton.setOnClickListener {
-            val message = binding.messageInput.text.toString()
-            if (message.isNotEmpty()) {
+            val message = binding.messageInput.text.toString().trim()
+            if (message.isNotEmpty() && message.length <= MAX_MESSAGE_LENGTH) {
                 updateMessage(message)
                 binding.messageInput.text.clear()
+            } else if (message.length > MAX_MESSAGE_LENGTH) {
+                Toast.makeText(this, "Message too long! Max $MAX_MESSAGE_LENGTH characters", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -150,6 +179,7 @@ class MainActivity : AppCompatActivity() {
         
         addMessage("📡 BLE Dual-Mode App")
         addMessage("🔄 Switch between Server (broadcast) and Client (scan) modes")
+        addMessage("⚠️ Messages limited to $MAX_MESSAGE_LENGTH characters for BLE ads")
         addMessage("")
     }
 
@@ -348,11 +378,15 @@ class MainActivity : AppCompatActivity() {
             .setConnectable(true)
             .build()
 
-        val messageBytes = currentMessage.take(18).toByteArray()
+        // Use the safe message length
+        val safeMessage = currentMessage.take(MAX_MESSAGE_LENGTH)
+        val messageBytes = safeMessage.toByteArray()
+        
+        addMessage("📏 Message length: ${messageBytes.size} bytes (max ~20 for BLE ads)")
         
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .setIncludeTxPowerLevel(false)
+            .setIncludeDeviceName(false) // Save space for message
+            .setIncludeTxPowerLevel(false) // Save space for message
             .addServiceUuid(ParcelUuid(SERVICE_UUID))
             .addManufacturerData(0x004C, messageBytes)
             .build()
@@ -361,7 +395,7 @@ class MainActivity : AppCompatActivity() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
                 isAdvertising = true
                 runOnUiThread {
-                    addMessage("📡 SERVER: Broadcasting \"$currentMessage\"")
+                    addMessage("📡 SERVER: Broadcasting \"$safeMessage\"")
                     addMessage("🚀 Other devices can now scan and receive this message")
                     updateUI()
                 }
@@ -374,11 +408,17 @@ class MainActivity : AppCompatActivity() {
                         AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "BLE advertising not supported"
                         AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many BLE advertisers running"
                         AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "Advertising already started"
-                        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Message too large (max ~18 characters)"
+                        AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Message still too large! Try shorter message"
                         AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal Bluetooth error"
                         else -> "Unknown error (code: $errorCode)"
                     }
                     addMessage("❌ SERVER: Advertising failed: $errorMsg")
+                    
+                    if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE) {
+                        addMessage("💡 Try a message with 10 characters or less")
+                        Toast.makeText(this@MainActivity, "Message too large! Try shorter text", Toast.LENGTH_LONG).show()
+                    }
+                    
                     updateUI()
                 }
             }
@@ -420,7 +460,7 @@ class MainActivity : AppCompatActivity() {
                 .build()
         )
 
-        val scanCallback = object : ScanCallback() {
+        scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
                 val rssi = result.rssi
@@ -473,10 +513,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopClientMode() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED || 
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            bluetoothLeScanner?.stopScan(object : ScanCallback() {})
+        scanCallback?.let { callback ->
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED || 
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                bluetoothLeScanner?.stopScan(callback)
+            }
         }
+        scanCallback = null
         isScanning = false
         
         addMessage("🛑 CLIENT: Stopped scanning")
@@ -484,14 +527,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateMessage(newMessage: String) {
-        val truncatedMessage = if (newMessage.length > 18) {
-            addMessage("⚠️ Message too long! Truncating to 18 characters...")
-            newMessage.take(18)
-        } else {
-            newMessage
+        val safeMessage = newMessage.take(MAX_MESSAGE_LENGTH)
+        
+        if (newMessage.length > MAX_MESSAGE_LENGTH) {
+            addMessage("⚠️ Message truncated to $MAX_MESSAGE_LENGTH characters")
         }
         
-        currentMessage = truncatedMessage
+        currentMessage = safeMessage
         addMessage("📤 Updated message: \"$currentMessage\"")
         
         if (currentMode == Mode.SERVER && isAdvertising) {
@@ -523,10 +565,10 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     "Status: 🔴 SERVER - Not Broadcasting"
                 }
-                binding.sendMessageButton.isEnabled = true
+                binding.sendMessageButton.isEnabled = binding.messageInput.text.length <= MAX_MESSAGE_LENGTH && binding.messageInput.text.isNotEmpty()
                 binding.messageInput.isEnabled = true
                 binding.sendMessageButton.text = if (isAdvertising) "Update Message" else "Set Message"
-                binding.messageInput.hint = "Message to broadcast (max 18 chars)"
+                binding.messageInput.hint = "Message to broadcast (max $MAX_MESSAGE_LENGTH chars)"
             }
             Mode.CLIENT -> {
                 binding.startServerButton.text = if (isScanning) "Stop Scanning" else "Start Scanning"
