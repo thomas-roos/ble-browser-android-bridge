@@ -33,10 +33,10 @@ class MainActivity : AppCompatActivity() {
     private var isScanning = false
     private var scanCallback: ScanCallback? = null
     
-    private var currentMessage = ""  // Start with empty message
+    private var currentMessage = "Hi"  // Start with short default message
     private var currentMode = Mode.SERVER
     
-    // Configuration - can be modified here to change prefix
+    // Configuration - CHANGE THIS to customize the prefix (must match config.properties)
     private val MESSAGE_PREFIX = "BLE:"  // Change this to customize the prefix
     private val MAX_TOTAL_MESSAGE_LENGTH = 15  // BLE advertisement size limit
     private val MAX_USER_MESSAGE_LENGTH = MAX_TOTAL_MESSAGE_LENGTH - MESSAGE_PREFIX.length
