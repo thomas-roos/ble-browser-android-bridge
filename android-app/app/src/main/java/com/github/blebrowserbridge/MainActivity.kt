@@ -104,6 +104,14 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Starting BLE Client")
         isServer = false
         binding.statusText.text = "Status: BLE Client Started"
+        
+        // Show received page display if no PDF loaded
+        if (pdfRenderer == null) {
+            binding.pdfImageView.visibility = android.view.View.GONE
+            binding.receivedPageText.visibility = android.view.View.VISIBLE
+            binding.receivedPageText.text = "Client Mode: Waiting for page updates..."
+        }
+        
         Toast.makeText(this, "BLE Client Started (Debug Mode)", Toast.LENGTH_SHORT).show()
     }
     
@@ -118,6 +126,16 @@ class MainActivity : AppCompatActivity() {
         
         Log.d(TAG, "Debug Info: $info")
         Toast.makeText(this, info, Toast.LENGTH_LONG).show()
+        
+        // Simulate receiving page update for testing
+        if (!isServer && pdfRenderer == null) {
+            simulateReceivedPage((1..10).random())
+        }
+    }
+    
+    private fun simulateReceivedPage(pageNumber: Int) {
+        Log.d(TAG, "Simulated received page: $pageNumber")
+        binding.receivedPageText.text = "Received Page: $pageNumber\n\n(Load a PDF to see actual content)"
     }
     
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -137,6 +155,11 @@ class MainActivity : AppCompatActivity() {
                 pdfRenderer?.close() // Close previous PDF if any
                 pdfRenderer = PdfRenderer(it)
                 currentPageIndex = 0
+                
+                // Show PDF view, hide received page text
+                binding.pdfImageView.visibility = android.view.View.VISIBLE
+                binding.receivedPageText.visibility = android.view.View.GONE
+                
                 showPage(currentPageIndex)
                 Log.d(TAG, "PDF loaded successfully. Pages: ${pdfRenderer?.pageCount}")
             }

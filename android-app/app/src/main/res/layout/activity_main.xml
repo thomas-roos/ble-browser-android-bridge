@@ -94,12 +94,28 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <ImageView
-            android:id="@+id/pdfImageView"
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:adjustViewBounds="true"
-            android:scaleType="fitCenter" />
+            android:layout_height="wrap_content">
+
+            <ImageView
+                android:id="@+id/pdfImageView"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:scaleType="fitCenter" />
+
+            <TextView
+                android:id="@+id/receivedPageText"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="Client Mode: Waiting for page updates..."
+                android:textSize="18sp"
+                android:background="#f0f0f0"
+                android:visibility="gone" />
+
+        </FrameLayout>
 
     </ScrollView>
 
