@@ -5,23 +5,29 @@ import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.github.blebrowserbridge.databinding.ActivityMainBinding
-import com.github.barteksc.pdfviewer.listener.OnPageChangeListener
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var bluetoothManager: BluetoothManager
     private lateinit var bluetoothAdapter: BluetoothAdapter
     
+    private var pdfRenderer: PdfRenderer? = null
+    private var currentPage: PdfRenderer.Page? = null
+    private var currentPageIndex = 0
+    
     private val PERMISSION_REQUEST_CODE = 1001
     private val PDF_PICK_REQUEST = 1002
-    private var currentPage = 0
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +60,14 @@ class MainActivity : AppCompatActivity() {
         binding.startClientButton.setOnClickListener {
             Toast.makeText(this, "BLE Client Started", Toast.LENGTH_SHORT).show()
         }
+        
+        binding.prevButton.setOnClickListener {
+            showPreviousPage()
+        }
+        
+        binding.nextButton.setOnClickListener {
+            showNextPage()
+        }
     }
     
     private fun selectPDF() {
@@ -74,14 +88,55 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun loadPDF(uri: Uri) {
-        binding.pdfView.fromUri(uri)
-            .onPageChange(object : OnPageChangeListener {
-                override fun onPageChanged(page: Int, pageCount: Int) {
-                    currentPage = page
-                    binding.pageInfo.text = "Page ${page + 1} of $pageCount"
-                }
-            })
-            .load()
+        try {
+            val fileDescriptor = contentResolver.openFileDescriptor(uri, "r")
+            fileDescriptor?.let {
+                pdfRenderer = PdfRenderer(it)
+                currentPageIndex = 0
+                showPage(currentPageIndex)
+                updatePageInfo()
+            }
+        } catch (e: IOException) {
+            Toast.makeText(this, "Error loading PDF", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun showPage(index: Int) {
+        pdfRenderer?.let { renderer ->
+            currentPage?.close()
+            currentPage = renderer.openPage(index)
+            
+            val bitmap = Bitmap.createBitmap(
+                currentPage!!.width, currentPage!!.height, Bitmap.Config.ARGB_8888
+            )
+            currentPage!!.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            binding.pdfImageView.setImageBitmap(bitmap)
+            
+            currentPageIndex = index
+            updatePageInfo()
+        }
+    }
+    
+    private fun showPreviousPage() {
+        if (currentPageIndex > 0) {
+            showPage(currentPageIndex - 1)
+        }
+    }
+    
+    private fun showNextPage() {
+        pdfRenderer?.let { renderer ->
+            if (currentPageIndex < renderer.pageCount - 1) {
+                showPage(currentPageIndex + 1)
+            }
+        }
+    }
+    
+    private fun updatePageInfo() {
+        pdfRenderer?.let { renderer ->
+            binding.pageInfo.text = "Page ${currentPageIndex + 1} of ${renderer.pageCount}"
+        } ?: run {
+            binding.pageInfo.text = "No PDF loaded"
+        }
     }
     
     private fun requestPermissions() {
@@ -95,5 +150,11 @@ class MainActivity : AppCompatActivity() {
         if (permissions.any { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }) {
             ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE)
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        currentPage?.close()
+        pdfRenderer?.close()
     }
 }
