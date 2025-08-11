@@ -1,50 +1,46 @@
-# BLE Browser-Android Bridge
+# BLE PDF Sync
 
-A Bluetooth Low Energy (BLE) communication bridge between web browsers and Android devices. This project enables direct browser-to-Android communication using Web Bluetooth API and Android BLE peripheral mode.
+A Bluetooth Low Energy (BLE) PDF synchronization app for Android devices. This project enables synchronized PDF viewing between Android devices using BLE communication.
 
 ## 🚀 Quick Start
 
-### For Android App
+### Installation
 1. Download the latest APK from [Releases](../../releases)
-2. Install on your Android device
-3. Grant Bluetooth permissions when prompted
-4. Tap "Start BLE Server" to begin advertising
+2. Install on your Android devices
+3. Grant Bluetooth and storage permissions when prompted
 
-### For Web Browser
-1. Visit the test page: [https://YOUR_USERNAME.github.io/ble-browser-android-bridge](https://YOUR_USERNAME.github.io/ble-browser-android-bridge)
-2. Enable experimental features in Chrome: `chrome://flags/#enable-experimental-web-platform-features`
-3. Click "Connect to Android" and select your device
-4. Start messaging!
+### Usage
+1. **Server Device (Presenter)**:
+   - Tap "Select PDF" to choose a PDF file
+   - Tap "Start Server" to begin broadcasting
+   - Navigate through pages - changes will be broadcast to clients
+
+2. **Client Device (Viewer)**:
+   - Tap "Start Client" to scan for servers
+   - PDF page changes will be received automatically
+   - Load the same PDF file to see synchronized navigation
 
 ## 📱 Features
 
-- **Real-time Communication**: Direct browser-to-Android messaging via BLE
-- **Cross-platform**: Works with any Web Bluetooth compatible browser
+- **Real-time PDF Sync**: Page changes broadcast via BLE
+- **Dual Mode**: Server (broadcaster) and Client (receiver) modes
 - **No Internet Required**: Direct device-to-device communication
-- **Easy Installation**: Automated APK builds via GitHub Actions
-- **Live Demo**: Hosted test page on GitHub Pages
+- **PDF Viewer**: Built-in PDF viewing with navigation controls
+- **Easy Setup**: Simple one-tap server/client switching
 
 ## 🛠️ Development
 
-### Android App
+### Build Android App
 ```bash
 cd android-app
 ./gradlew assembleDebug
 ```
 
-### Web Client
-The web client is a static HTML page that can be served locally:
-```bash
-cd web-client
-python -m http.server 8000
-# Visit http://localhost:8000
-```
-
 ## 🔧 Technical Details
 
-- **Android**: Kotlin, BLE Peripheral mode, GATT Server
-- **Web**: Vanilla JavaScript, Web Bluetooth API
-- **Communication**: Custom GATT service with read/write characteristics
+- **Android**: Kotlin, BLE Peripheral/Central modes, GATT Server/Client
+- **PDF Viewer**: Android PDF Viewer library
+- **Communication**: Custom GATT service for page synchronization
 - **Range**: ~10-30 meters (typical BLE range)
 
 ## 📋 Requirements
@@ -52,18 +48,13 @@ python -m http.server 8000
 ### Android
 - Android 5.0+ (API 21+)
 - Bluetooth LE support
-- Location permission (required for BLE advertising)
-
-### Browser
-- Chrome 56+ or Edge 79+
-- Experimental Web Platform features enabled
-- HTTPS connection (or localhost for development)
+- Storage permission (for PDF file access)
+- Location permission (required for BLE advertising/scanning)
 
 ## 🚀 CI/CD
 
 This project includes automated workflows:
 - **Android APK Build**: Automatic APK generation on releases
-- **GitHub Pages**: Auto-deployment of web client
 - **Release Management**: Tagged releases with downloadable APKs
 
 ## 🤝 Contributing
@@ -80,12 +71,20 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## 🐛 Troubleshooting
 
 ### Common Issues
-- **"Device not found"**: Ensure Android app is running and advertising
+- **"No PDF loaded"**: Select a PDF file first before starting server/client
 - **"Connection failed"**: Check Bluetooth is enabled on both devices
-- **"Permission denied"**: Grant location permission on Android
-- **"Web Bluetooth not available"**: Enable experimental features in browser
+- **"Permission denied"**: Grant Bluetooth and storage permissions
+- **"Server not found"**: Ensure server device is broadcasting
 
 ### Debug Tips
-- Check browser console for detailed error messages
-- Use Android Studio logcat for Android app debugging
+- Check that both devices have the same PDF file
 - Ensure devices are within BLE range (~10-30m)
+- Restart the app if connection issues persist
+- Use Android Studio logcat for detailed debugging
+
+## 📖 How It Works
+
+1. **Server Mode**: Device broadcasts page changes via BLE advertisements and GATT server
+2. **Client Mode**: Device scans for BLE advertisements and connects to receive page updates
+3. **Synchronization**: When server changes pages, all connected clients automatically navigate to the same page
+4. **PDF Loading**: Each device loads its own copy of the PDF file for viewing

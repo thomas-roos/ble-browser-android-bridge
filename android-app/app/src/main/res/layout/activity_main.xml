@@ -4,154 +4,111 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="16dp"
+    android:padding="8dp"
     tools:context=".MainActivity">
 
-    <!-- App Title -->
+    <!-- Title -->
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="📡 BLE Dual-Mode Bridge"
-        android:textSize="24sp"
+        android:text="📄 BLE PDF Sync"
+        android:textSize="20sp"
         android:textStyle="bold"
         android:gravity="center"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="8dp" />
 
-    <!-- Mode Toggle Buttons -->
+    <!-- Controls -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
 
         <Button
-            android:id="@+id/serverModeButton"
+            android:id="@+id/btnSelectPdf"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="📡 SERVER\n(Broadcast)"
-            android:layout_marginEnd="8dp"
-            android:backgroundTint="@color/purple_500"
-            android:textColor="@android:color/white" />
+            android:text="Select PDF"
+            android:layout_marginEnd="4dp" />
 
         <Button
-            android:id="@+id/clientModeButton"
+            android:id="@+id/btnStartServer"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="📱 CLIENT\n(Scan)"
-            android:layout_marginStart="8dp"
-            android:backgroundTint="@color/teal_700"
-            android:textColor="@android:color/white" />
+            android:text="Start Server"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp" />
+
+        <Button
+            android:id="@+id/btnStartClient"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start Client"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="2dp" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Stop"
+            android:layout_marginStart="4dp" />
 
     </LinearLayout>
 
-    <!-- Status Display -->
+    <!-- Status -->
     <TextView
-        android:id="@+id/statusText"
+        android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Status: Ready"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:padding="12dp"
+        android:textSize="14sp"
+        android:padding="8dp"
         android:background="@color/purple_200"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="8dp" />
 
-    <!-- Main Action Button -->
-    <Button
-        android:id="@+id/startServerButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Start Broadcasting"
-        android:textSize="18sp"
-        android:padding="16dp"
-        android:layout_marginBottom="16dp"
-        android:backgroundTint="@color/purple_500" />
-
-    <!-- Message Input Section -->
+    <!-- Page Navigation -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:layout_marginBottom="16dp">
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="8dp">
 
-        <!-- Character Counter -->
+        <Button
+            android:id="@+id/btnPrevPage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="◀ Prev"
+            android:layout_marginEnd="16dp" />
+
         <TextView
-            android:id="@+id/characterCounter"
-            android:layout_width="match_parent"
+            android:id="@+id/tvPageInfo"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0/15"
-            android:textSize="12sp"
-            android:gravity="end"
-            android:layout_marginBottom="4dp"
-            android:textColor="@android:color/darker_gray" />
+            android:text="No PDF loaded"
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-        <!-- Input Row -->
-        <LinearLayout
-            android:layout_width="match_parent"
+        <Button
+            android:id="@+id/btnNextPage"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <EditText
-                android:id="@+id/messageInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:hint="Message to broadcast (max 15 chars)"
-                android:maxLength="20"
-                android:layout_marginEnd="8dp"
-                android:inputType="text"
-                android:singleLine="true" />
-
-            <Button
-                android:id="@+id/sendMessageButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Update Message"
-                android:backgroundTint="@color/teal_700"
-                android:enabled="false" />
-
-        </LinearLayout>
+            android:text="Next ▶"
+            android:layout_marginStart="16dp" />
 
     </LinearLayout>
 
-    <!-- Messages Display -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="📋 Activity Log:"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
-
-    <ScrollView
-        android:id="@+id/scrollView"
+    <!-- PDF Viewer -->
+    <com.github.barteksc.pdfviewer.PDFView
+        android:id="@+id/pdfView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:background="@color/purple_200"
-        android:padding="8dp">
-
-        <TextView
-            android:id="@+id/messagesText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:fontFamily="monospace"
-            android:textColor="@android:color/black" />
-
-    </ScrollView>
-
-    <!-- Instructions -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="💡 SERVER: Broadcast messages (max 15 chars) • CLIENT: Scan for messages from other devices"
-        android:textSize="12sp"
-        android:textStyle="italic"
-        android:gravity="center"
-        android:layout_marginTop="8dp"
-        android:textColor="@color/purple_700" />
+        android:background="@android:color/white" />
 
 </LinearLayout>
