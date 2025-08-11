@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BLE Scanner</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+        .device { padding: 10px; margin: 10px 0; background: #f0f0f0; border-radius: 5px; }
+        .status { padding: 10px; margin: 10px 0; background: #e7f3ff; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>BLE Device Scanner</h1>
+    <button onclick="scanForDevices()">Scan for BLE Devices</button>
+    <button onclick="clearResults()">Clear</button>
+    
+    <div id="status"></div>
+    <div id="devices"></div>
+
+    <script>
+        function log(message) {
+            document.getElementById('status').innerHTML = `<div class="status">${new Date().toLocaleTimeString()}: ${message}</div>`;
+        }
+
+        function addDevice(device) {
+            const div = document.createElement('div');
+            div.className = 'device';
+            div.innerHTML = `
+                <strong>Device Found:</strong> ${device.name || 'Unknown'}<br>
+                <strong>ID:</strong> ${device.id}<br>
+                <strong>Time:</strong> ${new Date().toLocaleTimeString()}
+            `;
+            document.getElementById('devices').appendChild(div);
+        }
+
+        async function scanForDevices() {
+            if (!navigator.bluetooth) {
+                log('❌ Web Bluetooth not supported');
+                return;
+            }
+
+            try {
+                log('🔍 Scanning for devices...');
+                
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: []
+                });
+                
+                log('✅ Device found!');
+                addDevice(device);
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('devices').innerHTML = '';
+            log('🗑️ Results cleared');
+        }
+
+        // Initial status
+        if (navigator.bluetooth) {
+            log('✅ Ready to scan');
+        } else {
+            log('❌ Web Bluetooth not supported');
+        }
+    </script>
+</body>
+</html>
