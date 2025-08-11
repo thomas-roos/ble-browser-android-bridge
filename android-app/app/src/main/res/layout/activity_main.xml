@@ -1,114 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="8dp"
-    tools:context=".MainActivity">
+    android:padding="16dp"
+    android:gravity="center">
 
-    <!-- Title -->
     <TextView
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="📄 BLE PDF Sync"
-        android:textSize="20sp"
+        android:text="BLE PDF Sync"
+        android:textSize="24sp"
         android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginBottom="32dp" />
 
-    <!-- Controls -->
-    <LinearLayout
+    <Button
+        android:id="@+id/startServerButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="8dp">
+        android:text="Start Server"
+        android:layout_marginBottom="16dp" />
 
-        <Button
-            android:id="@+id/btnSelectPdf"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Select PDF"
-            android:layout_marginEnd="4dp" />
-
-        <Button
-            android:id="@+id/btnStartServer"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Start Server"
-            android:layout_marginStart="2dp"
-            android:layout_marginEnd="2dp" />
-
-        <Button
-            android:id="@+id/btnStartClient"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Start Client"
-            android:layout_marginStart="2dp"
-            android:layout_marginEnd="2dp" />
-
-        <Button
-            android:id="@+id/btnStop"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Stop"
-            android:layout_marginStart="4dp" />
-
-    </LinearLayout>
-
-    <!-- Status -->
-    <TextView
-        android:id="@+id/tvStatus"
+    <Button
+        android:id="@+id/startClientButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Status: Ready"
-        android:textSize="14sp"
-        android:padding="8dp"
-        android:background="@color/purple_200"
-        android:layout_marginBottom="8dp" />
-
-    <!-- Page Navigation -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:layout_marginBottom="8dp">
-
-        <Button
-            android:id="@+id/btnPrevPage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="◀ Prev"
-            android:layout_marginEnd="16dp" />
-
-        <TextView
-            android:id="@+id/tvPageInfo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="No PDF loaded"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-
-        <Button
-            android:id="@+id/btnNextPage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Next ▶"
-            android:layout_marginStart="16dp" />
-
-    </LinearLayout>
-
-    <!-- PDF Viewer -->
-    <com.github.barteksc.pdfviewer.PDFView
-        android:id="@+id/pdfView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:background="@android:color/white" />
+        android:text="Start Client" />
 
 </LinearLayout>
