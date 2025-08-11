@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="16dp">
+        android:layout_marginBottom="8dp">
 
         <Button
             android:id="@+id/selectPdfButton"
@@ -17,7 +17,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Select PDF"
-            android:layout_marginEnd="8dp" />
+            android:layout_marginEnd="4dp" />
 
         <Button
             android:id="@+id/startServerButton"
@@ -25,16 +25,41 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Start Server"
-            android:layout_marginStart="8dp" />
+            android:layout_marginHorizontal="4dp" />
+
+        <Button
+            android:id="@+id/startClientButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Start Client"
+            android:layout_marginStart="4dp" />
 
     </LinearLayout>
 
-    <Button
-        android:id="@+id/startClientButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start Client"
-        android:layout_marginBottom="16dp" />
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <Button
+            android:id="@+id/debugButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Debug Info"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Status: Ready"
+            android:gravity="center"
+            android:textSize="12sp" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
