@@ -11,8 +11,8 @@ android {
         applicationId "com.github.blebrowserbridge"
         minSdk 21
         targetSdk 34
-        versionCode 1
-        versionName "1.0.0"
+        versionCode 33
+        versionName "3.3.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,10 +37,6 @@ android {
     buildFeatures {
         viewBinding true
     }
-}
-
-repositories {
-    maven { url 'https://jitpack.io' }
 }
 
 dependencies {
