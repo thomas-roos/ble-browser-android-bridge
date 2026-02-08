@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
 
     private var pdfFiles: List<Uri> = emptyList()
     private var currentPdfIndex = -1
+    private var isServer = false
 
     private val TAG = "BLE_PDF_SYNC"
 
@@ -67,9 +68,24 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         bluetoothController = BluetoothController(this)
-        bluetoothController.onPdfNameReceived = {
+        // This is the new, smarter client logic
+        bluetoothController.onPdfNameReceived = { pdfName ->
             runOnUiThread {
-                binding.receivedPageText.text = "Open PDF: $it"
+                if (!isServer) {
+                    val uriToOpen = pdfFiles.find { uri -> getFileName(uri) == pdfName }
+                    if (uriToOpen != null) {
+                        val newIndex = pdfFiles.indexOf(uriToOpen)
+                        if (newIndex != currentPdfIndex) {
+                            currentPdfIndex = newIndex
+                            openPdf(uriToOpen) // This will now open the correct PDF
+                        }
+                    } else {
+                        binding.pdfImageView.visibility = View.GONE
+                        binding.receivedPageText.visibility = View.VISIBLE
+                        binding.receivedPageText.text = "Received: '$pdfName' (File not found locally)"
+                        Toast.makeText(this, "'$pdfName' not found in your selected folder", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
         initBluetooth()
@@ -148,14 +164,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        pdfFiles = pdfs
+        pdfFiles = pdfs.sortedBy { getFileName(it) } // Sort files alphabetically
         Log.d(TAG, "Found ${pdfFiles.size} PDF files in the folder")
     }
 
     private fun openPdf(uri: Uri) {
         val pdfName = getFileName(uri)
         if (pdfName != null) {
-            bluetoothController.sendPdfNameViaAdvertisement(pdfName)
+            // Only the server broadcasts the name
+            if (isServer) {
+                bluetoothController.sendPdfNameViaAdvertisement(pdfName)
+            }
             loadPDF(uri)
             binding.pageInfo.text = pdfName
         } else {
@@ -165,13 +184,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun startBLEServer() {
         Log.d(TAG, "Starting BLE Server")
+        isServer = true
         bluetoothController.startServer()
         binding.statusText.text = "Status: BLE Server Started"
         Toast.makeText(this, "BLE Server Started", Toast.LENGTH_SHORT).show()
     }
 
     private fun startBLEClient() {
+        if (pdfFiles.isEmpty()) {
+            Toast.makeText(this, "Please select a PDF folder on this device first", Toast.LENGTH_LONG).show()
+            return
+        }
         Log.d(TAG, "Starting BLE Client")
+        isServer = false
         bluetoothController.startClient()
         binding.statusText.text = "Status: BLE Client Started"
         binding.pdfImageView.visibility = View.GONE
