@@ -1,5 +1,6 @@
 package com.github.blebrowserbridge
 
+import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
@@ -12,9 +13,11 @@ import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.os.ParcelUuid
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
-import java.util.UUID
+import androidx.core.content.ContextCompat
+import java.nio.charset.Charset
 
 class BluetoothController(private val context: Context) {
 
@@ -23,78 +26,146 @@ class BluetoothController(private val context: Context) {
     private val advertiser: BluetoothLeAdvertiser? = bluetoothAdapter?.bluetoothLeAdvertiser
     private val scanner: BluetoothLeScanner? = bluetoothAdapter?.bluetoothLeScanner
 
-    private val TAG = "BluetoothController"
-    private val SERVICE_UUID = UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB") // Heart Rate Service UUID
+    companion object {
+        private const val TAG = "BluetoothController"
+        private const val MANUFACTURER_ID = 0xFFFF
+        private const val MAX_ADVERTISEMENT_BYTES = 18 // Reduced for safety
+    }
 
-    var onPageReceived: ((Int) -> Unit)? = null
+    var onPdfNameReceived: ((String) -> Unit)? = null
+    val bleEvents = mutableListOf<String>()
+    private var lastReceivedPdfName: String? = null
 
     fun isBluetoothEnabled(): Boolean {
         return bluetoothAdapter?.isEnabled == true
     }
 
     fun startServer() {
-        Log.d(TAG, "Starting BLE Server")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+            bleEvents.add("ERROR: BLUETOOTH_ADVERTISE permission missing.")
+            return
+        }
+        Log.d(TAG, "Starting BLE Server with initial advertisement")
+        sendPdfNameViaAdvertisement("server-ready") // Initial advertisement
+    }
+
+    fun sendPdfNameViaAdvertisement(pdfName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) {
+            bleEvents.add("ERROR: BLUETOOTH_ADVERTISE permission missing.")
+            return
+        }
+        Log.d(TAG, "Updating advertisement with PDF name: $pdfName")
+        bleEvents.add("Advertising PDF: $pdfName")
+
+        try {
+             advertiser?.stopAdvertising(advertiseCallback)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception while stopping advertising", e)
+            bleEvents.add("ERROR: Permission missing to stop advertising.")
+        }
+
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .setConnectable(true)
+            .setConnectable(false)
             .build()
+
+        var nameBytes = pdfName.toByteArray(Charset.defaultCharset())
+        if (nameBytes.size > MAX_ADVERTISEMENT_BYTES) {
+            nameBytes = nameBytes.sliceArray(0 until MAX_ADVERTISEMENT_BYTES)
+            Log.w(TAG, "PDF name was truncated for advertisement")
+            bleEvents.add("Warning: PDF name truncated to ${nameBytes.size} bytes")
+        }
 
         val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .addServiceUuid(ParcelUuid(SERVICE_UUID))
+            .setIncludeDeviceName(false)
+            .addManufacturerData(MANUFACTURER_ID, nameBytes)
             .build()
 
-        advertiser?.startAdvertising(settings, data, advertiseCallback)
+        try {
+            advertiser?.startAdvertising(settings, data, advertiseCallback)
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception while starting advertising", e)
+            bleEvents.add("ERROR: Permission missing to start advertising.")
+        }
     }
 
     fun startClient() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+            bleEvents.add("ERROR: BLUETOOTH_SCAN permission missing.")
+            return
+        }
         Log.d(TAG, "Starting BLE Client")
-        val scanFilters = listOf(
-            ScanFilter.Builder()
-                .setServiceUuid(ParcelUuid(SERVICE_UUID))
-                .build()
-        )
+        val scanFilters = listOf(ScanFilter.Builder().build())
 
         val scanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner?.startScan(scanFilters, scanSettings, scanCallback)
+        try {
+            scanner?.startScan(scanFilters, scanSettings, scanCallback)
+            bleEvents.add("Client scan started.")
+        } catch(e: SecurityException) {
+            Log.e(TAG, "Security exception while starting scan", e)
+            bleEvents.add("ERROR: Permission missing to start scan.")
+        }
     }
 
     fun stop() {
-        Log.d(TAG, "Stopping Bluetooth connections")
-        advertiser?.stopAdvertising(advertiseCallback)
-        scanner?.stopScan(scanCallback)
+        Log.d(TAG, "Stopping BLE operations")
+        try {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED) {
+                advertiser?.stopAdvertising(advertiseCallback)
+            }
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED) {
+                scanner?.stopScan(scanCallback)
+            }
+            bleEvents.add("BLE operations stopped.")
+        } catch(e: SecurityException) {
+            Log.e(TAG, "Security exception while stopping BLE", e)
+        }
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
             Log.d(TAG, "Advertising started successfully")
+            bleEvents.add("Advertising successfully started.")
         }
 
         override fun onStartFailure(errorCode: Int) {
-            Log.e(TAG, "Advertising onStartFailure: $errorCode")
+            val reason = when (errorCode) {
+                AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "Data too large"
+                AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "Too many advertisers"
+                AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "Already started"
+                AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "Internal error"
+                AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "Feature unsupported"
+                else -> "Unknown error"
+            }
+            val errorMessage = "Advertising onStartFailure: $errorCode - $reason"
+            Log.e(TAG, errorMessage)
+            bleEvents.add(errorMessage)
         }
     }
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
-            result?.device?.let {
-                Log.d(TAG, "Device found: ${it.name} - ${it.address}")
-                // For now, let's just simulate a page reception
-                val randomPage = (1..20).random()
-                onPageReceived?.invoke(randomPage)
+            result?.scanRecord?.getManufacturerSpecificData(MANUFACTURER_ID)?.let { data ->
+                val pdfName = data.toString(Charset.defaultCharset())
+                if (pdfName != lastReceivedPdfName) {
+                    lastReceivedPdfName = pdfName
+                    Log.d(TAG, "Received new advertisement with PDF Name: $pdfName")
+                    bleEvents.add("Received PDF: $pdfName")
+                    onPdfNameReceived?.invoke(pdfName)
+                }
             }
         }
 
-        override fun onBatchScanResults(results: MutableList<ScanResult>?) {
-            Log.d(TAG, "Batch scan results received")
-        }
+        override fun onBatchScanResults(results: MutableList<ScanResult>?) {}
 
         override fun onScanFailed(errorCode: Int) {
-            Log.e(TAG, "Scan failed with error code: $errorCode")
+            val errorMessage = "Scan failed with error code: $errorCode"
+            Log.e(TAG, errorMessage)
+            bleEvents.add(errorMessage)
         }
     }
 }

@@ -3,15 +3,20 @@ package com.github.blebrowserbridge
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.github.blebrowserbridge.databinding.ActivityMainBinding
@@ -23,8 +28,9 @@ class MainActivity : AppCompatActivity() {
 
     private var pdfRenderer: PdfRenderer? = null
     private var currentPage: PdfRenderer.Page? = null
-    private var currentPageIndex = 0
-    private var isServer = false
+
+    private var pdfFiles: List<Uri> = emptyList()
+    private var currentPdfIndex = -1
 
     private val TAG = "BLE_PDF_SYNC"
 
@@ -34,7 +40,6 @@ class MainActivity : AppCompatActivity() {
         permissions.entries.forEach { (permission, isGranted) ->
             if (!isGranted) {
                 Log.w(TAG, "Permission not granted: $permission")
-                // Handle permission denial gracefully, e.g., show a message to the user
                 Toast.makeText(this, "Permission required: $permission", Toast.LENGTH_SHORT).show()
             }
         }
@@ -45,8 +50,13 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             result.data?.data?.let { uri ->
-                Log.d(TAG, "PDF selected: $uri")
-                loadPDF(uri)
+                Log.d(TAG, "Folder selected: $uri")
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                listPdfFilesInFolder(uri)
+                if (pdfFiles.isNotEmpty()) {
+                    currentPdfIndex = 0
+                    openPdf(pdfFiles[currentPdfIndex])
+                }
             }
         }
     }
@@ -57,9 +67,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         bluetoothController = BluetoothController(this)
-        bluetoothController.onPageReceived = {
+        bluetoothController.onPdfNameReceived = {
             runOnUiThread {
-                simulateReceivedPage(it)
+                binding.receivedPageText.text = "Open PDF: $it"
             }
         }
         initBluetooth()
@@ -80,7 +90,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupUI() {
         binding.selectPdfButton.setOnClickListener {
-            selectPDF()
+            selectPdfFolder()
         }
 
         binding.startServerButton.setOnClickListener {
@@ -91,91 +101,101 @@ class MainActivity : AppCompatActivity() {
             startBLEClient()
         }
 
+        binding.prevButton.visibility = View.VISIBLE
+        binding.nextButton.visibility = View.VISIBLE
+
         binding.prevButton.setOnClickListener {
-            Log.d(TAG, "Previous button clicked")
-            showPreviousPage()
+            if (currentPdfIndex > 0) {
+                currentPdfIndex--
+                openPdf(pdfFiles[currentPdfIndex])
+            } else {
+                Toast.makeText(this, "First PDF in folder", Toast.LENGTH_SHORT).show()
+            }
         }
 
         binding.nextButton.setOnClickListener {
-            Log.d(TAG, "Next button clicked")
-            showNextPage()
+            if (currentPdfIndex < pdfFiles.size - 1) {
+                currentPdfIndex++
+                openPdf(pdfFiles[currentPdfIndex])
+            } else {
+                Toast.makeText(this, "Last PDF in folder", Toast.LENGTH_SHORT).show()
+            }
         }
-
+        
         binding.debugButton.setOnClickListener {
-            showDebugInfo()
+            showDebugLog()
         }
     }
 
-    private fun selectPDF() {
-        Log.d(TAG, "Selecting PDF")
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "application/pdf"
-            addCategory(Intent.CATEGORY_OPENABLE)
-        }
+    private fun selectPdfFolder() {
+        Log.d(TAG, "Selecting PDF folder")
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
         pickPdfLauncher.launch(intent)
+    }
+
+    private fun listPdfFilesInFolder(folderUri: Uri) {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, DocumentsContract.getTreeDocumentId(folderUri))
+        val cursor = contentResolver.query(childrenUri, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE), null, null, null)
+
+        val pdfs = mutableListOf<Uri>()
+        cursor?.use {
+            while (it.moveToNext()) {
+                val mimeType = it.getString(it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE))
+                if (mimeType == "application/pdf") {
+                    val docId = it.getString(it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID))
+                    val fileUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, docId)
+                    pdfs.add(fileUri)
+                }
+            }
+        }
+        pdfFiles = pdfs
+        Log.d(TAG, "Found ${pdfFiles.size} PDF files in the folder")
+    }
+
+    private fun openPdf(uri: Uri) {
+        val pdfName = getFileName(uri)
+        if (pdfName != null) {
+            bluetoothController.sendPdfNameViaAdvertisement(pdfName)
+            loadPDF(uri)
+            binding.pageInfo.text = pdfName
+        } else {
+            Toast.makeText(this, "Could not get PDF name", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun startBLEServer() {
         Log.d(TAG, "Starting BLE Server")
-        isServer = true
         bluetoothController.startServer()
         binding.statusText.text = "Status: BLE Server Started"
-        Toast.makeText(this, "BLE Server Started (Debug Mode)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "BLE Server Started", Toast.LENGTH_SHORT).show()
     }
 
     private fun startBLEClient() {
         Log.d(TAG, "Starting BLE Client")
-        isServer = false
         bluetoothController.startClient()
         binding.statusText.text = "Status: BLE Client Started"
-
-        // Show received page display if no PDF loaded
-        if (pdfRenderer == null) {
-            binding.pdfImageView.visibility = android.view.View.GONE
-            binding.receivedPageText.visibility = android.view.View.VISIBLE
-            binding.receivedPageText.text = "Client Mode: Waiting for page updates..."
-        }
-
-        Toast.makeText(this, "BLE Client Started (Debug Mode)", Toast.LENGTH_SHORT).show()
+        binding.pdfImageView.visibility = View.GONE
+        binding.receivedPageText.visibility = View.VISIBLE
+        binding.receivedPageText.text = "Client Mode: Waiting for PDF name..."
+        Toast.makeText(this, "BLE Client Started", Toast.LENGTH_SHORT).show()
     }
 
-    private fun showDebugInfo() {
-        val info = """
-            PDF Loaded: ${pdfRenderer != null}
-            Current Page: ${currentPageIndex + 1}
-            Total Pages: ${pdfRenderer?.pageCount ?: 0}
-            Is Server: $isServer
-            Bluetooth Enabled: ${bluetoothController.isBluetoothEnabled()}
-        """.trimIndent()
-
-        Log.d(TAG, "Debug Info: $info")
-        Toast.makeText(this, info, Toast.LENGTH_LONG).show()
-
-        // Simulate receiving page update for testing
-        if (!isServer && pdfRenderer == null) {
-            simulateReceivedPage((1..10).random())
-        }
-    }
-
-    private fun simulateReceivedPage(pageNumber: Int) {
-        Log.d(TAG, "Simulated received page: $pageNumber")
-        binding.receivedPageText.text = "Received Page: $pageNumber\n\n(Load a PDF to see actual content)"
-    }
 
     private fun loadPDF(uri: Uri) {
         try {
             val fileDescriptor = contentResolver.openFileDescriptor(uri, "r")
             fileDescriptor?.let {
-                pdfRenderer?.close() // Close previous PDF if any
+                pdfRenderer?.close()
                 pdfRenderer = PdfRenderer(it)
-                currentPageIndex = 0
-
-                // Show PDF view, hide received page text
-                binding.pdfImageView.visibility = android.view.View.VISIBLE
-                binding.receivedPageText.visibility = android.view.View.GONE
-
-                showPage(currentPageIndex)
-                Log.d(TAG, "PDF loaded successfully. Pages: ${pdfRenderer?.pageCount}")
+                currentPage = pdfRenderer?.openPage(0)
+                currentPage?.let { page ->
+                    val bitmap = Bitmap.createBitmap(page.width, page.height, Bitmap.Config.ARGB_8888)
+                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    binding.pdfImageView.setImageBitmap(bitmap)
+                    binding.pdfImageView.visibility = View.VISIBLE
+                    binding.receivedPageText.visibility = View.GONE
+                }
+                Log.d(TAG, "PDF loaded successfully.")
             }
         } catch (e: IOException) {
             Log.e(TAG, "Error loading PDF", e)
@@ -183,61 +203,40 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPage(index: Int) {
-        pdfRenderer?.let { renderer ->
-            if (index < 0 || index >= renderer.pageCount) {
-                Log.w(TAG, "Invalid page index: $index")
-                return
-            }
-
+    private fun getFileName(uri: Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            val cursor: Cursor? = contentResolver.query(uri, null, null, null, null)
             try {
-                currentPage?.close()
-                currentPage = renderer.openPage(index)
-
-                val bitmap = Bitmap.createBitmap(
-                    currentPage!!.width, currentPage!!.height, Bitmap.Config.ARGB_8888
-                )
-                currentPage!!.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                binding.pdfImageView.setImageBitmap(bitmap)
-
-                currentPageIndex = index
-                updatePageInfo()
-                Log.d(TAG, "Showing page: ${index + 1}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error showing page $index", e)
-            }
-        } ?: run {
-            Log.w(TAG, "No PDF loaded")
-            Toast.makeText(this, "Please select a PDF first", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun showPreviousPage() {
-        if (currentPageIndex > 0) {
-            showPage(currentPageIndex - 1)
-        } else {
-            Log.d(TAG, "Already at first page")
-            Toast.makeText(this, "Already at first page", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun showNextPage() {
-        pdfRenderer?.let { renderer ->
-            if (currentPageIndex < renderer.pageCount - 1) {
-                showPage(currentPageIndex + 1)
-            } else {
-                Log.d(TAG, "Already at last page")
-                Toast.makeText(this, "Already at last page", Toast.LENGTH_SHORT).show()
+                if (cursor != null && cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if(nameIndex != -1) {
+                       result = cursor.getString(nameIndex)
+                    } 
+                }
+            } finally {
+                cursor?.close()
             }
         }
-    }
-
-    private fun updatePageInfo() {
-        pdfRenderer?.let { renderer ->
-            binding.pageInfo.text = "Page ${currentPageIndex + 1} of ${renderer.pageCount}"
-        } ?: run {
-            binding.pageInfo.text = "No PDF loaded"
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/')
+            if (cut != -1) {
+                if (result != null) {
+                    result = result.substring(cut!! + 1)
+                }
+            }
         }
+        return result
+    }
+    
+    private fun showDebugLog() {
+        val log = bluetoothController.bleEvents.joinToString("\n")
+        AlertDialog.Builder(this)
+            .setTitle("BLE Debug Log")
+            .setMessage(log)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun requestPermissions() {
