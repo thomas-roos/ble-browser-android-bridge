@@ -66,7 +66,8 @@ This project includes automated workflows:
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) for details.
+GPLv3 License - see [LICENSE](LICENSE) for details.
+I want to keep it free forever!
 
 ## 🐛 Troubleshooting
 
