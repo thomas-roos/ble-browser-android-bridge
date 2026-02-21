@@ -72,14 +72,19 @@ class MainActivity : AppCompatActivity() {
         bluetoothController.onPdfNameReceived = { pdfName ->
             runOnUiThread {
                 if (!isServer) {
-                    val uriToOpen = pdfFiles.find { uri -> getFileName(uri) == pdfName }
+                    Log.d(TAG, "Client received PDF name: $pdfName")
+                    // Match by the start of the name to handle truncated advertisement data
+                    val uriToOpen = pdfFiles.find { uri -> getFileName(uri)?.startsWith(pdfName, ignoreCase = true) == true }
                     if (uriToOpen != null) {
+                        Log.d(TAG, "Found matching PDF: ${getFileName(uriToOpen)}")
                         val newIndex = pdfFiles.indexOf(uriToOpen)
-                        if (newIndex != currentPdfIndex) {
+                        // Also show if the view is currently not displaying a PDF
+                        if (newIndex != currentPdfIndex || binding.pdfImageView.visibility == View.GONE) {
                             currentPdfIndex = newIndex
-                            openPdf(uriToOpen) // This will now open the correct PDF
+                            openPdf(uriToOpen)
                         }
                     } else {
+                        Log.w(TAG, "No local PDF found starting with: $pdfName")
                         binding.pdfImageView.visibility = View.GONE
                         binding.receivedPageText.visibility = View.VISIBLE
                         binding.receivedPageText.text = "Received: '$pdfName' (File not found locally)"
