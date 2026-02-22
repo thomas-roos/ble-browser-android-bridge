@@ -78,7 +78,7 @@ I want to keep it free forever!
 - **"Server not found"**: Ensure server device is broadcasting
 
 ### Debug Tips
-- Check that both devices have the same PDF file
+- Check that both devices have the same PDF file name 
 - Ensure devices are within BLE range (~10-30m)
 - Restart the app if connection issues persist
 - Use Android Studio logcat for detailed debugging
